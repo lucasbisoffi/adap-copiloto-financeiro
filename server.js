@@ -2,55 +2,91 @@ import "dotenv/config";
 import express from "express";
 import rateLimit from "express-rate-limit";
 import rateLimitMongo from "rate-limit-mongo";
-import { connectToDatabase } from "./src/config/database.js";
+
+// Bloco de verificação de variáveis de ambiente no início de tudo.
+const requiredEnvVars = [
+  "MONGODB_URI",
+  "OPENAI_API_KEY",
+  "TWILIO_ACCOUNT_SID",
+  "TWILIO_AUTH_TOKEN",
+  "TWILIO_PHONE_NUMBER",
+];
+for (const varName of requiredEnvVars) {
+  if (!process.env[varName]) {
+    console.error(
+      `❌ ERRO CRÍTICO: A variável de ambiente ${varName} não está definida.`
+    );
+    console.error(
+      "Verifique se o seu arquivo .env está correto e na raiz do projeto."
+    );
+    process.exit(1);
+  }
+}
+
+// Importa nossas funções do banco de dados e outros módulos.
+import {
+  connectToDatabase,
+  getMongooseConnection,
+} from "./src/config/database.js";
 import webhookRouter from "./src/routes/webhook.js";
-import { startReminderJob } from './src/jobs/reminderJob.js';
+import { startReminderJob } from "./src/jobs/reminderJob.js";
 
 const app = express();
 app.use("/images", express.static("/tmp"));
 app.use(express.urlencoded({ extended: true }));
 
-// Sua configuração de Rate Limit está perfeita, nenhuma mudança necessária aqui.
-const mongoStore = new rateLimitMongo({
-  uri: process.env.MONGO_URI,
-  collectionName: "rateLimits",
-  expireTimeMs: 60 * 1000,
-});
-
-const userLimiter = rateLimit({
-  windowMs: 60 * 1000, 
-  max: 60,
-  message: {
-    status: 429,
-    body: "🚫 Você excedeu o limite de requisições. Tente novamente mais tarde."
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => req.body?.From || req.ip,
-  store: mongoStore
-});
-
-// Aplica o middleware do limiter apenas na rota do webhook
-app.use("/webhook", userLimiter, webhookRouter);
-
-// =======================================================================
-// MUDANÇA CRÍTICA: LÓGICA DE INICIALIZAÇÃO
-// =======================================================================
-connectToDatabase()
-  .then(() => {
+// A inicialização do servidor agora está encapsulada em uma função 'async'.
+async function startServer() {
+  try {
+    // 1. Tenta conectar ao banco de dados e espera a conclusão.
+    await connectToDatabase();
     console.log("✅ MongoDB conectado com sucesso.");
 
-    // 1. AGORA que o banco está conectado, iniciamos o job de lembretes.
+    // 2. SÓ DEPOIS da conexão, configura o que depende dela.
+    const mongoStore = new rateLimitMongo({
+      // MUDANÇA: Passando a URI diretamente, como a biblioteca pediu.
+      uri: process.env.MONGODB_URI,
+      collectionName: "rateLimits",
+      // A linha 'connection' não é mais necessária.
+      expireTimeMs: 60 * 1000, // É uma boa prática definir o tempo de expiração.
+    });
+
+    const userLimiter = rateLimit({
+      windowMs: 60 * 1000,
+      max: 60,
+      message: {
+        status: 429,
+        body: "🚫 Você excedeu o limite de requisições.",
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req) => req.body?.From || req.ip,
+      store: mongoStore,
+    });
+
+    // 3. Aplica os middlewares e rotas.
+    app.use("/webhook", userLimiter, webhookRouter);
+
+    // 4. Inicia os jobs agendados.
     startReminderJob();
 
-    // 2. E AGORA iniciamos o servidor para aceitar requisições.
+    // 5. Inicia o servidor para escutar por requisições.
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
-      console.log(`🚀 Servidor ADAP: Co-piloto Financeiro rodando na porta ${PORT}`);
+      console.log(
+        `🚀 Servidor ADAP: Co-piloto Financeiro rodando na porta ${PORT}`
+      );
     });
-  })
-  .catch((err) => {
-    // Se a conexão com o banco falhar, o servidor não deve nem iniciar.
-    console.error("❌ Falha crítica ao conectar ao MongoDB. O servidor não será iniciado.", err);
-    process.exit(1); // Encerra o processo com um código de erro.
-  });
+  } catch (error) {
+    // Se 'connectToDatabase' ou qualquer outra etapa inicial falhar,
+    // o servidor não será iniciado.
+    console.error(
+      "❌ Falha crítica na inicialização do servidor. Encerrando.",
+      error
+    );
+    process.exit(1);
+  }
+}
+
+// Chama a função para iniciar todo o processo.
+startServer();
