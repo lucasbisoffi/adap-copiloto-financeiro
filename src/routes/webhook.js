@@ -1,15 +1,42 @@
+// src/routes/webhook.js
+
+// --- Frameworks e Libs Essenciais ---
 import express from "express";
 import twilio from "twilio";
+import { customAlphabet } from "nanoid";
+
+// --- Nossos Módulos de Serviço (A "Inteligência") ---
+import { interpretDriverMessage, transcribeAudioWithWhisper } from "../services/aiService.js";
+import { generateProfitChart } from "../services/chartService.js";
+import { sendReportImage } from "../services/twilioService.js"; // Para enviar o gráfico
+
+// --- Nossos Módulos de Ajuda (Os "Assistentes") ---
 import { devLog } from "../helpers/logger.js";
 import {
-  interpretDriverMessage,
-  transcribeAudioWithWhisper,
-} from "../services/aiService.js";
-import // Funções existentes...
-"../helpers/totalUtils.js";
-import { generateProfitChart } from "../services/chartService.js";
-// ... outros imports
+  getPeriodSummary,
+  getProfitReportData,
+  getTotalReminders,
+  getExpenseDetails,
+  getIncomeDetails,
+} from "../helpers/totalUtils.js";
+import {
+  sendGreetingMessage,
+  sendHelpMessage,
+  sendIncomeAddedMessage,
+  sendExpenseAddedMessage,
+  sendIncomeDeletedMessage,
+  sendExpenseDeletedMessage,
+  sendReminderMessage,
+  sendTotalRemindersMessage,
+  sendReminderDeletedMessage,
+} from "../helpers/messages.js";
 
+// --- Nossos Modelos de Banco de Dados (A "Memória") ---
+import Expense from "../models/Expense.js";
+import Income from "../models/Income.js";
+import UserStats from "../models/UserStats.js"; // O que causou o erro anterior!
+import Reminder from "../models/Reminder.js";
+import Vehicle from "../models/Vehicle.js";
 const router = express.Router();
 let conversationState = {};
 

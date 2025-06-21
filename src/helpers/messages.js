@@ -10,7 +10,7 @@ export function sendGreetingMessage(twiml) {
 }
 
 export function sendHelpMessage(twiml) {
-  twiml.message(`👋 Olá! Sou o ADAP, seu *Co-piloto Financeiro*.
+  twiml.message(`👋 Olá! Sou o *ADAP, seu Copiloto Financeiro*.
 
 Estou aqui para te ajudar a saber se suas corridas estão dando lucro de verdade, de um jeito fácil e direto no WhatsApp.
 
