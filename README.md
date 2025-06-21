@@ -1,4 +1,4 @@
-# ADAP: Seu Co-piloto Financeiro 🚗💨
+# ADAP: Seu Copiloto Financeiro 🚗💨
 
 **ADAP** é um chatbot para WhatsApp projetado especificamente para **motoristas de aplicativo**. Ele ajuda você a entender sua lucratividade real, controlando seus ganhos e gastos de forma simples, inteligente e direto pelo chat.
 
