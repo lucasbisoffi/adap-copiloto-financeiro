@@ -27,7 +27,7 @@ Este projeto é a sua ferramenta para tomar decisões mais inteligentes e maximi
 
 ### Agradecimentos e Origem
 
-Este projeto é uma versão especializada e derivada do **CashChat**, um chatbot de finanças pessoais criado por **João Pedro Couto**. A base sólida e a licença permissiva (MIT) do projeto original foram fundamentais para a criação do ADAP.
+Este projeto é uma versão especializada e derivada do **ADAP**, um chatbot de finanças pessoais criado por **João Pedro Couto**. A base sólida e a licença permissiva (MIT) do projeto original foram fundamentais para a criação do ADAP.
 
 ---
 
