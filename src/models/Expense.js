@@ -25,7 +25,7 @@ const expenseSchema = new mongoose.Schema({
 
       // Custos Operacionais
       'Plano de Celular',
-      'Taxa da Plataforma', // Se o motorista quiser lançar manualmente
+      'Taxa da Plataforma',
 
       // Outros
       'Outros'

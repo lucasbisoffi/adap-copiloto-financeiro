@@ -66,7 +66,9 @@ export async function interpretDriverMessage(message) {
      - "add_expense": O usuário quer registrar um gasto (combustível, manutenção, etc.).
      - "delete_transaction": O usuário quer apagar um registro anterior. Extraia o messageId.
      - "generate_profit_chart": O usuário quer um resumo visual de ganhos e gastos (ex: "resumo da semana", "gráfico do mês").
-     - "get_summary": O usuário pede um resumo de totais (ex: "quanto ganhei hoje?", "quanto gastei de gasolina?", "lucro do mês").
+     - "get_summary": O usuário pede um resumo de lucro geral (ex: "resumo do mês", "lucro de junho").
+     - "get_expenses_by_category": O usuário quer ver o total de gastos do mês, quebrado por categoria (ex: "gasto total", "ver meus gastos").
+     - "get_incomes_by_source": O usuário quer ver o total de ganhos do mês, quebrado por plataforma (ex: "receita total", "ver meus ganhos").
      - "add_reminder": O usuário quer criar um lembrete (ex: "lembrar de pagar o seguro dia 15", "trocar o óleo semana que vem").
      - "delete_reminder": O usuário quer apagar um lembrete. Extraia o messageId.
      - "list_reminders": O usuário quer ver todos os lembretes pendentes.
@@ -137,10 +139,12 @@ export async function interpretDriverMessage(message) {
     Response: { "intent": "add_expense", "data": { "amount": 45, "description": "troca de oleo", "category": "Manutenção" } }
   - User: "paguei 350 no aluguel do carro"
     Response: { "intent": "add_expense", "data": { "amount": 350, "description": "aluguel do carro", "category": "Aluguel do Veículo" } }
-  - User: "resumo da semana"
-    Response: { "intent": "generate_profit_chart", "data": { "days": 7 } }
-  - User: "lucro do mês"
-    Response: { "intent": "get_summary", "data": { "month": "2024-08" } } // Assumindo mês atual é Agosto/2024
+  - User: "resumo do mês"
+    Response: { "intent": "get_summary", "data": { "month": "2025-06" } }
+  - User: "gasto total"
+    Response: { "intent": "get_expenses_by_category", "data": {} }
+  - User: "receita total"
+    Response: { "intent": "get_incomes_by_source", "data": {} }
   - User: "quanto ganhei na uber esse mês?"
     Response: { "intent": "get_summary", "data": { "source": "Uber", "month": "2024-08" } }
   - User: "lembrete pagar seguro dia 20"

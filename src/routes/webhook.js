@@ -6,7 +6,10 @@ import twilio from "twilio";
 import { customAlphabet } from "nanoid";
 
 // --- Nossos Módulos de Serviço (A "Inteligência") ---
-import { interpretDriverMessage, transcribeAudioWithWhisper } from "../services/aiService.js";
+import {
+  interpretDriverMessage,
+  transcribeAudioWithWhisper,
+} from "../services/aiService.js";
 import { generateProfitChart } from "../services/chartService.js";
 import { sendReportImage } from "../services/twilioService.js"; // Para enviar o gráfico
 
@@ -18,6 +21,8 @@ import {
   getTotalReminders,
   getExpenseDetails,
   getIncomeDetails,
+  getExpensesByCategory,
+  getIncomesBySource,
 } from "../helpers/totalUtils.js";
 import {
   sendGreetingMessage,
@@ -47,7 +52,7 @@ router.post("/", async (req, res) => {
   try {
     let messageToProcess;
 
-    // --- ETAPA 1: DETERMINAR A MENSAGEM A SER PROCESSADA (Áudio ou Texto) ---
+    // identificar se a mensagem é um áudio ou texto
     if (req.body.MediaUrl0 && req.body.MediaContentType0.includes("audio")) {
       const audioUrl = req.body.MediaUrl0;
       devLog(`Áudio detectado. URL: ${audioUrl}`);
@@ -65,74 +70,195 @@ router.post("/", async (req, res) => {
 
     devLog(`Mensagem de ${userId} para processar: "${messageToProcess}"`);
 
-    // --- ETAPA 2: VERIFICAR FLUXOS DE CONVERSA ATIVOS ---
+    // roteamento de conversas começa aqui
     const currentState = conversationState[userId];
+    if (
+      messageToProcess &&
+      ["cancelar", "parar", "sair"].includes(
+        messageToProcess.toLowerCase().trim()
+      )
+    ) {
+      if (currentState) {
+        delete conversationState[userId]; // Limpa o estado da conversa
+        twiml.message("Ok, operação cancelada. 👍");
+        devLog(`Fluxo cancelado pelo usuário: ${userId}`);
+      } else {
+        twiml.message(
+          "Não há nenhuma operação em andamento para cancelar. Como posso ajudar?"
+        );
+      }
+      res.writeHead(200, { "Content-Type": "text/xml" });
+      return res.end(twiml.toString());
+    }
+
     if (currentState && currentState.flow === "vehicle_registration") {
-      // O fluxo de conversa do veículo continua aqui, usando 'messageToProcess'
-      const vehicleFlowMessage = messageToProcess;
+      devLog(`Fluxo de Cadastro de Veículo - Passo: ${currentState.step}`);
+
+      // bloqueando áudio no cadastro de carros
+      if (req.body.MediaUrl0 && req.body.MediaContentType0.includes("audio")) {
+        twiml.message(
+          "✋ Para garantir a precisão dos dados, o cadastro do veículo deve ser feito *apenas por texto*.\n\nPor favor, digite sua resposta."
+        );
+        // A mensagem de áudio é ignorada e o estado da conversa não muda.
+        res.writeHead(200, { "Content-Type": "text/xml" });
+        return res.end(twiml.toString());
+      }
+
+      const vehicleFlowMessage = messageToProcess.trim();
+      const isConfirmation = ["sim", "s"].includes(
+        vehicleFlowMessage.toLowerCase()
+      );
+
       switch (currentState.step) {
         case "awaiting_brand":
-          currentState.brand = vehicleFlowMessage;
-          currentState.step = "awaiting_model";
-          twiml.message("Legal! E qual o *modelo*? (Ex: Onix, Argo, HB20)");
+          currentState.tempData = vehicleFlowMessage;
+          currentState.step = "confirming_brand";
+          twiml.message(
+            `Você digitou: "*${vehicleFlowMessage}*"\n\nEstá correto? Responda "*sim*" para confirmar, ou envie a marca novamente.`
+          );
           break;
+
+        case "confirming_brand":
+          if (isConfirmation) {
+            currentState.brand = currentState.tempData;
+            delete currentState.tempData;
+            currentState.step = "awaiting_model";
+            twiml.message(
+              "✅ Marca confirmada!\n\nAgora, qual o *modelo* do seu carro? (Ex: Onix, Argo, HB20 Comfort Plus)"
+            );
+          } else {
+            currentState.tempData = vehicleFlowMessage;
+            twiml.message(
+              `Ok, entendi: "*${vehicleFlowMessage}*"\n\nCorreto? (Responda "*sim*" ou envie novamente)`
+            );
+          }
+          break;
+
         case "awaiting_model":
-          currentState.model = vehicleFlowMessage;
-          currentState.step = "awaiting_year";
-          twiml.message("Anotado. Qual o *ano* do seu carro?");
+          currentState.tempData = vehicleFlowMessage;
+          currentState.step = "confirming_model";
+          twiml.message(
+            `Modelo: "*${vehicleFlowMessage}*"\n\nEstá correto? (Responda "*sim*" ou envie novamente)`
+          );
           break;
+
+        case "confirming_model":
+          if (isConfirmation) {
+            currentState.model = currentState.tempData;
+            delete currentState.tempData;
+            currentState.step = "awaiting_year";
+            twiml.message(
+              "✅ Modelo confirmado!\n\nQual o *ano* do seu carro? (Ex: 2022)"
+            );
+          } else {
+            currentState.tempData = vehicleFlowMessage;
+            twiml.message(
+              `Ok, entendi: "*${vehicleFlowMessage}*"\n\nCorreto? (Responda "*sim*" ou envie novamente)`
+            );
+          }
+          break;
+
         case "awaiting_year":
           if (
             isNaN(parseInt(vehicleFlowMessage)) ||
             vehicleFlowMessage.length !== 4
           ) {
             twiml.message(
-              "Hmm, o ano parece inválido. Por favor, envie apenas o ano com 4 dígitos (ex: 2021)."
+              "Opa, o ano parece inválido. Por favor, envie apenas o ano com 4 dígitos (ex: 2021)."
             );
           } else {
-            currentState.year = parseInt(vehicleFlowMessage);
-            currentState.step = "awaiting_mileage";
+            currentState.tempData = vehicleFlowMessage;
+            currentState.step = "confirming_year";
             twiml.message(
-              "Perfeito. Para finalizar, qual a *quilometragem (KM)* atual do painel?"
+              `Ano: *${vehicleFlowMessage}*\n\nEstá correto? (Responda "*sim*" ou envie novamente)`
             );
           }
           break;
+
+        case "confirming_year":
+          if (isConfirmation) {
+            currentState.year = parseInt(currentState.tempData);
+            delete currentState.tempData;
+            currentState.step = "awaiting_mileage";
+            twiml.message(
+              "✅ Ano confirmado!\n\nPara finalizar, qual a *quilometragem (KM)* atual do painel?"
+            );
+          } else {
+            if (
+              isNaN(parseInt(vehicleFlowMessage)) ||
+              vehicleFlowMessage.length !== 4
+            ) {
+              twiml.message(
+                "Este ano também parece inválido. Por favor, envie o ano com 4 dígitos (ex: 2021)."
+              );
+            } else {
+              currentState.tempData = vehicleFlowMessage;
+              twiml.message(
+                `Ok, entendi: *${vehicleFlowMessage}*\n\nCorreto? (Responda "*sim*" ou envie novamente)`
+              );
+            }
+          }
+          break;
+
         case "awaiting_mileage":
-          const mileage = parseInt(vehicleFlowMessage.replace(/\D/g, ""));
-          if (isNaN(mileage)) {
+          const mileage = vehicleFlowMessage.replace(/\D/g, "");
+          if (isNaN(parseInt(mileage))) {
             twiml.message(
               "Não entendi a quilometragem. Por favor, envie apenas os números (ex: 85000)."
             );
           } else {
-            currentState.initialMileage = mileage;
+            currentState.tempData = parseInt(mileage);
+            currentState.step = "confirming_mileage";
+            twiml.message(
+              `Quilometragem: *${mileage} KM*\n\nEstá correto? (Responda "*sim*" para finalizar o cadastro)`
+            );
+          }
+          break;
+
+        case "confirming_mileage":
+          if (isConfirmation) {
+            currentState.mileage = currentState.tempData;
             const newVehicle = new Vehicle({
               userId,
               brand: currentState.brand,
               model: currentState.model,
               year: currentState.year,
-              initialMileage: mileage,
-              currentMileage: mileage,
+              initialMileage: currentState.mileage,
+              currentMileage: currentState.mileage,
             });
             await newVehicle.save();
+
             await UserStats.findOneAndUpdate(
               { userId },
               { $set: { activeVehicleId: newVehicle._id } },
               { upsert: true }
             );
+
             twiml.message(
               `🚀 Prontinho! Seu *${currentState.brand} ${currentState.model}* foi cadastrado com sucesso.`
             );
             delete conversationState[userId];
+          } else {
+            const newMileage = vehicleFlowMessage.replace(/\D/g, "");
+            if (isNaN(parseInt(newMileage))) {
+              twiml.message(
+                "Este valor também parece inválido. Por favor, envie apenas os números (ex: 85000)."
+              );
+            } else {
+              currentState.tempData = parseInt(newMileage);
+              twiml.message(
+                `Ok, entendi: *${newMileage} KM*\n\nCorreto? (Responda "*sim*" para finalizar)`
+              );
+            }
           }
           break;
       }
-      // Se estamos em um fluxo de conversa, respondemos e terminamos a execução aqui.
       res.writeHead(200, { "Content-Type": "text/xml" });
       return res.end(twiml.toString());
     }
+    //roteamento de conversas termina aqui
 
-    // --- ETAPA 3: FLUXO PRINCIPAL COM INTERPRETAÇÃO DA IA ---
-    // Esta parte só é executada se não estivermos em um fluxo de conversa.
+    // fluxo com a IA começa aqui, só é executado se nenhum fluxo de conversa estiver ativo
     const userStats = await UserStats.findOne({ userId }, { blocked: 1 });
     if (userStats?.blocked) {
       twiml.message("🚫 Você está bloqueado de usar a ADAP.");
@@ -142,7 +268,7 @@ router.post("/", async (req, res) => {
 
     const generateId = customAlphabet("1234567890abcdef", 5);
 
-    // CORREÇÃO: Usar 'messageToProcess' para a interpretação da IA
+    // interpretação da mensagem pela IA
     const interpretation = await interpretDriverMessage(messageToProcess);
     devLog("Intenção da IA:", interpretation.intent);
 
@@ -153,11 +279,10 @@ router.post("/", async (req, res) => {
           step: "awaiting_brand",
         };
         twiml.message(
-          "Vamos cadastrar seu carro! 🚗\n\nPrimeiro, qual a *marca* do seu veículo? (Ex: Chevrolet, Fiat, Hyundai)"
+          "🚗 Vamos cadastrar seu carro!\n\nResponda a sequência de perguntas e pare a qualquer momento digitando 'cancelar'.\n\nQual a *marca* do seu veículo? (Ex: Chevrolet, Fiat, Hyundai)"
         );
         break;
       }
-
       case "add_income": {
         const { amount, description, category, source, tax, distance } =
           interpretation.data;
@@ -208,7 +333,6 @@ router.post("/", async (req, res) => {
         );
         break;
       }
-
       case "delete_transaction": {
         // MUDANÇA: A lógica base é a mesma, mas a remoção da 'createdCategory' simplifica.
         const { messageId } = interpretation.data;
@@ -236,58 +360,162 @@ router.post("/", async (req, res) => {
         }
         break;
       }
-
       case "generate_profit_chart": {
         const { days = 7 } = interpretation.data;
         twiml.message(
           `📈 Certo! Gerando o gráfico de lucratividade dos últimos ${days} dias... (Funcionalidade em desenvolvimento)`
         );
-        // TODO: Implementar a lógica real
-        // 1. Chamar uma nova função em `totalUtils.js` que busca ganhos E gastos.
-        // 2. Chamar uma nova função em `chartService.js` que cria um gráfico de barras (Ganhos vs Gastos).
-        // 3. Enviar a imagem com `sendReportImage`.
         break;
       }
 
-      case "get_summary": {
-        const { category, source, month } = interpretation.data;
-        twiml.message(
-          `📊 Ok! Calculando o resumo para você... (Funcionalidade em desenvolvimento)`
-        );
-        // TODO: Implementar a lógica real
-        // 1. Criar uma nova função em `totalUtils.js` para calcular resumos.
-        //    - Se `source` for informado, calcula ganhos daquela plataforma.
-        //    - Se `category` for informada, calcula gastos daquela categoria.
-        //    - Se nada for informado, calcula Lucro = Ganhos - Gastos do período.
-        // 2. Montar uma mensagem clara com o resultado.
+      case "get_expenses_by_category": {
+        const now = new Date();
+        const month = `${now.getFullYear()}-${String(
+          now.getMonth() + 1
+        ).padStart(2, "0")}`;
+        const monthNameRaw = now.toLocaleString("pt-BR", { month: "long" });
+        const monthName =
+          monthNameRaw.charAt(0).toUpperCase() + monthNameRaw.slice(1);
+
+        const expenses = await getExpensesByCategory(userId, month);
+
+        if (expenses.length === 0) {
+          twiml.message(
+            `Você não tem nenhum gasto registrado em *${monthName}*.`
+          );
+          break;
+        }
+
+        let message = `*Gastos de ${monthName} por Categoria* 💸\n\n`;
+        let totalSpent = 0;
+        expenses.forEach((exp) => {
+          message += `*${exp._id}*: R$ ${exp.total.toFixed(2)}\n`;
+          totalSpent += exp.total;
+        });
+
+        message += `\n*Total Gasto:* R$ ${totalSpent.toFixed(2)}`;
+        message += `\n\n_Digite "detalhes gastos" para ver a lista completa._`;
+
+        // Salva o contexto para o comando "detalhes"
+        conversationState[userId] = {
+          type: "expense",
+          month: month,
+          monthName: monthName,
+        };
+
+        twiml.message(message);
+        break;
+      }
+
+      case "get_incomes_by_source": {
+        const now = new Date();
+        const month = `${now.getFullYear()}-${String(
+          now.getMonth() + 1
+        ).padStart(2, "0")}`;
+        const monthNameRaw = now.toLocaleString("pt-BR", { month: "long" });
+        const monthName =
+          monthNameRaw.charAt(0).toUpperCase() + monthNameRaw.slice(1);
+
+        const incomes = await getIncomesBySource(userId, month);
+
+        if (incomes.length === 0) {
+          twiml.message(
+            `Você não tem nenhuma receita registrada em *${monthName}*.`
+          );
+          break;
+        }
+
+        let message = `*Ganhos de ${monthName} por Plataforma* 💰\n\n`;
+        let totalIncome = 0;
+        incomes.forEach((inc) => {
+          message += `*${inc._id}*: R$ ${inc.total.toFixed(2)}\n`;
+          totalIncome += inc.total;
+        });
+
+        message += `\n*Total Recebido:* R$ ${totalIncome.toFixed(2)}`;
+        message += `\n\n_Digite "detalhes receitas" para ver a lista completa._`;
+
+        // Salva o contexto para o comando "detalhes"
+        conversationState[userId] = {
+          type: "income",
+          month: month,
+          monthName: monthName,
+        };
+
+        twiml.message(message);
         break;
       }
 
       case "detalhes": {
-        const previousData = conversationState[userId];
-        if (!previousData || !previousData.month) {
+        const messageText = messageToProcess.toLowerCase();
+        let detailType;
+        if (messageText.includes("gasto")) {
+          detailType = "expense";
+        } else if (messageText.includes("receita")) {
+          detailType = "income";
+        } else {
           twiml.message(
-            "🚫 Para ver os detalhes, peça um resumo de gastos ou receitas primeiro."
+            'Por favor, especifique o que deseja detalhar. Ex: "detalhes gastos" ou "detalhes receitas".'
           );
           break;
         }
-        const { type, category, month, monthName } = previousData;
+
+        const previousData = conversationState[userId];
+
+        if (!previousData || !previousData.month) {
+          twiml.message(
+            "Não há um relatório recente para detalhar. Peça um resumo de gastos ou receitas primeiro."
+          );
+          break;
+        }
+
+        const { month, monthName } = previousData;
+
         const detailsMessage =
-          type === "income"
-            ? await getIncomeDetails(userId, month, monthName, category)
-            : await getExpenseDetails(userId, month, monthName, category);
+          detailType === "income"
+            ? await getIncomeDetails(userId, month, monthName)
+            : await getExpenseDetails(userId, month, monthName);
 
         twiml.message(detailsMessage);
+        // Limpa o estado após o uso bem-sucedido
         delete conversationState[userId];
         break;
       }
 
+      case "get_summary": {
+        let { category, source, month, monthName } = interpretation.data;
+
+        if (!month || !monthName) {
+          const now = new Date();
+          month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
+            2,
+            "0"
+          )}`;
+          const monthNameRaw = now.toLocaleString("pt-BR", { month: "long" });
+          monthName =
+            monthNameRaw.charAt(0).toUpperCase() + monthNameRaw.slice(1);
+        }
+
+        devLog(
+          `Calculando resumo para: Mês=${month}, Categoria=${category}, Fonte=${source}`
+        );
+
+        const summaryMessage = await getPeriodSummary(
+          userId,
+          month,
+          monthName,
+          source,
+          category
+        );
+
+        twiml.message(summaryMessage);
+        break;
+      }
       case "greeting": {
         // MUDANÇA: A mensagem de saudação precisa ser adaptada para motoristas.
         sendGreetingMessage(twiml);
         break;
       }
-
       case "add_reminder": {
         const { description, reminderDate, type } = interpretation.data;
         const newReminder = new Reminder({
@@ -303,7 +531,6 @@ router.post("/", async (req, res) => {
         await sendReminderMessage(twiml, messageToProcess, newReminder);
         break;
       }
-
       case "delete_reminder": {
         const { messageId } = interpretation.data;
         const reminder = await Reminder.findOneAndDelete({ userId, messageId });
@@ -316,19 +543,16 @@ router.post("/", async (req, res) => {
         }
         break;
       }
-
       case "list_reminders": {
         const totalReminders = await getTotalReminders(userId);
         sendTotalRemindersMessage(twiml, totalReminders);
         break;
       }
-
       case "instructions": {
         // TODO: A mensagem de ajuda precisa ser totalmente reescrita para o público motorista.
         sendHelpMessage(twiml);
         break;
       }
-
       default:
         sendHelpMessage(twiml);
         break;
@@ -340,7 +564,6 @@ router.post("/", async (req, res) => {
     );
   }
 
-  // --- ETAPA FINAL: Enviar a resposta ---
   res.writeHead(200, { "Content-Type": "text/xml" });
   res.end(twiml.toString());
 });
