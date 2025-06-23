@@ -9,12 +9,8 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// MUDANÇA: A função pipeline do stream é útil para gerenciar downloads.
 const pipeline = promisify(stream.pipeline);
 
-// =======================================================================
-// NOVA FUNÇÃO: O "Ouvido" do nosso Co-piloto
-// =======================================================================
 export async function transcribeAudioWithWhisper(audioUrl) {
   try {
     // 1. Fazer o download do arquivo de áudio da URL fornecida pelo Twilio.
@@ -55,7 +51,7 @@ export async function transcribeAudioWithWhisper(audioUrl) {
   }
 }
 
-export async function interpretDriverMessage(message) {
+export async function interpretDriverMessage(message, currentDate) {
   const systemPrompt = `
   Você é o "ADAP", um co-piloto financeiro especialista para motoristas de aplicativo. Sua tarefa é interpretar mensagens em português do Brasil e extrair dados financeiros estruturados. Seja preciso e entenda o jargão do dia a dia de um motorista.
 
@@ -66,9 +62,10 @@ export async function interpretDriverMessage(message) {
      - "add_expense": O usuário quer registrar um gasto (combustível, manutenção, etc.).
      - "delete_transaction": O usuário quer apagar um registro anterior. Extraia o messageId.
      - "generate_profit_chart": O usuário quer um resumo visual de ganhos e gastos (ex: "resumo da semana", "gráfico do mês").
-     - "get_summary": O usuário pede um resumo de lucro geral (ex: "resumo do mês", "lucro de junho").
+     - "get_summary": O usuário pede um resumo de lucro geral (ganhos - gastos) para um período, SEM filtros de categoria ou fonte (ex: "resumo do mês", "lucro de junho").
      - "get_expenses_by_category": O usuário quer ver o total de gastos do mês, quebrado por categoria (ex: "gasto total", "ver meus gastos").
      - "get_incomes_by_source": O usuário quer ver o total de ganhos do mês, quebrado por plataforma (ex: "receita total", "ver meus ganhos").
+     - "get_transaction_details": O usuário pede uma lista detalhada de transações após ver um resumo (ex: "detalhes gastos", "ver detalhes", "detalhar receitas").
      - "add_reminder": O usuário quer criar um lembrete (ex: "lembrar de pagar o seguro dia 15", "trocar o óleo semana que vem").
      - "delete_reminder": O usuário quer apagar um lembrete. Extraia o messageId.
      - "list_reminders": O usuário quer ver todos os lembretes pendentes.
@@ -103,7 +100,7 @@ export async function interpretDriverMessage(message) {
 
   4. EXTRAIA DADOS PARA "add_reminder":
      - description: O que é o lembrete.
-     - reminderDate: A data futura no formato ISO 8601 (YYYY-MM-DDTHH:mm:ss.sssZ). Considere o ano atual como 2024.
+     - reminderDate: A data futura no formato ISO 8601 (YYYY-MM-DDTHH:mm:ss.sssZ). A data de hoje é ${currentDate}. Interprete "hoje", "amanhã", "semana que vem" com base nisso.
      - type: CLASSIFIQUE OBRIGATORIAMENTE em um dos seguintes: ['Pagamento', 'Manutenção', 'Documento', 'Outro'].
 
   5. FORMATO DA RESPOSTA:
@@ -145,6 +142,12 @@ export async function interpretDriverMessage(message) {
     Response: { "intent": "get_expenses_by_category", "data": {} }
   - User: "receita total"
     Response: { "intent": "get_incomes_by_source", "data": {} }
+  - User: "detalhes gastos"
+    Response: { "intent": "get_transaction_details", "data": { "type": "expense" } }
+  - User: "detalhar receitas"
+    Response: { "intent": "get_transaction_details", "data": { "type": "income" } }
+  - User: "ver detalhes"
+    Response: { "intent": "get_transaction_details", "data": {} }  
   - User: "quanto ganhei na uber esse mês?"
     Response: { "intent": "get_summary", "data": { "source": "Uber", "month": "2024-08" } }
   - User: "lembrete pagar seguro dia 20"
@@ -161,20 +164,18 @@ export async function interpretDriverMessage(message) {
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // ou gpt-4-turbo para maior precisão se necessário
+      model: "gpt-4o-mini", 
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: message },
       ],
-      response_format: { type: "json_object" }, // Usando o JSON mode da OpenAI para garantir a saída
-      max_tokens: 250, // Aumentei um pouco para garantir que JSONs complexos caibam
+      response_format: { type: "json_object" }, 
+      max_tokens: 250,
     });
 
-    // O JSON mode já garante que a resposta será um JSON válido
     return JSON.parse(response.choices[0].message.content);
   } catch (err) {
     console.error("Erro ao interpretar IA:", err);
-    // Retornar um 'unknown' é mais seguro do que 'financial_help' no contexto do motorista
     return { intent: "unknown", data: {} };
   }
 }
