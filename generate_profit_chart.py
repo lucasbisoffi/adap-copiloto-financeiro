@@ -1,79 +1,75 @@
 import sys
 import json
 import os
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import cloudinary
 import cloudinary.uploader
-import pandas as pd
 
-# --- Configuração do Cloudinary ---
-# Carrega as credenciais das variáveis de ambiente para segurança.
+# Função para imprimir mensagens de erro no stderr e sair.
+def fail(message):
+    print(f"ERROR: {message}", file=sys.stderr)
+    sys.exit(1)
+
+# Configuração do Cloudinary
 try:
     cloudinary.config(
         cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
         api_key=os.getenv("CLOUDINARY_API_KEY"),
         api_secret=os.getenv("CLOUDINARY_API_SECRET"),
     )
+    if not all([os.getenv("CLOUDINARY_CLOUD_NAME"), os.getenv("CLOUDINARY_API_KEY"), os.getenv("CLOUDINARY_API_SECRET")]):
+        raise ValueError("Credenciais do Cloudinary nao estao totalmente configuradas.")
 except Exception as e:
-    print(f"Erro na configuracao do Cloudinary: {e}", file=sys.stderr)
-    sys.exit(1)
+    fail(f"Erro na configuracao do Cloudinary: {e}")
 
 def create_profit_chart(data, image_path):
     """
     Gera um gráfico de barras comparando ganhos e gastos diários.
     """
     if not data:
-        print("Dados vazios, nenhum gráfico gerado.", file=sys.stderr)
+        fail("Dados vazios recebidos. Nao e possivel gerar o grafico.")
         return
 
-    # Converte os dados JSON para um DataFrame do Pandas, que é ótimo para manipulação.
     df = pd.DataFrame(data)
 
-    # Garante que as colunas de ganho e gasto existam, preenchendo com 0 se faltarem.
     if 'income' not in df.columns:
         df['income'] = 0
     if 'expense' not in df.columns:
         df['expense'] = 0
-    df.fillna(0, inplace=True) # Substitui qualquer valor nulo (NaN) por 0.
+    df.fillna(0, inplace=True) 
 
-    # Converte a coluna de data para o formato datetime e a formata para "dd/mm".
     df['date'] = pd.to_datetime(df['date'])
     df.sort_values('date', inplace=True)
     df['formatted_date'] = df['date'].dt.strftime('%d/%m')
 
-    # --- Criação do Gráfico ---
     plt.style.use('seaborn-v0_8-whitegrid')
     fig, ax = plt.subplots(figsize=(12, 7))
 
     bar_width = 0.4
-    index = df.index
+    index = range(len(df)) # Usar range para evitar problemas com index do pandas
 
-    # Cria as barras de Ganhos (verde) e Gastos (vermelho).
-    bars_income = ax.bar(index - bar_width/2, df['income'], bar_width, label='Ganhos', color='#4CAF50', edgecolor='black')
-    bars_expense = ax.bar(index + bar_width/2, df['expense'], bar_width, label='Gastos', color='#F44336', edgecolor='black')
+    bars_income = ax.bar([i - bar_width/2 for i in index], df['income'], bar_width, label='Ganhos', color='#4CAF50', edgecolor='black')
+    bars_expense = ax.bar([i + bar_width/2 for i in index], df['expense'], bar_width, label='Gastos', color='#F44336', edgecolor='black')
 
-    # Configurações de Título e Rótulos.
     ax.set_title('Resumo de Ganhos vs. Gastos Diários', fontsize=16, fontweight='bold', pad=20)
     ax.set_ylabel('Valor (R$)', fontsize=12)
     ax.set_xlabel('Data', fontsize=12)
 
-    # Formata o eixo Y para exibir como moeda (R$).
     formatter = mticker.FormatStrFormatter('R$ %.2f')
     ax.yaxis.set_major_formatter(formatter)
     
-    # Configura os marcadores do eixo X para serem as datas formatadas.
     ax.set_xticks(index)
     ax.set_xticklabels(df['formatted_date'], rotation=45, ha="right")
 
     ax.legend()
-    fig.tight_layout() # Ajusta o layout para evitar sobreposição.
-
-    # Salva a imagem gerada no caminho especificado.
+    fig.tight_layout()
     plt.savefig(image_path, dpi=100)
     plt.close()
-    print(f"Grafico salvo em: {image_path}", file=sys.stderr)
-
+    
+    # MUDANÇA: A mensagem de status foi removida. O Node.js já loga o progresso.
+    # print(f"Grafico salvo em: {image_path}", file=sys.stderr) <-- Removido
 
 def upload_to_cloudinary(image_path):
     """
@@ -83,43 +79,40 @@ def upload_to_cloudinary(image_path):
         upload_response = cloudinary.uploader.upload(image_path, folder="adap_reports")
         return upload_response.get('secure_url')
     except Exception as e:
-        print(f"Erro no upload para Cloudinary: {e}", file=sys.stderr)
+        # Erro de upload é um erro real, então usamos fail().
+        fail(f"Erro no upload para Cloudinary: {e}")
         return None
 
 if __name__ == "__main__":
-    # Verifica se os argumentos de linha de comando foram passados corretamente.
     if len(sys.argv) != 3:
-        print("Uso: python generate_profit_chart.py <caminho_json_entrada> <caminho_imagem_saida>", file=sys.stderr)
-        sys.exit(1)
+        fail("Uso incorreto. Esperado: python generate_profit_chart.py <json_in> <image_out>")
 
     json_path = sys.argv[1]
     image_path = sys.argv[2]
 
     try:
-        # Carrega os dados do arquivo JSON.
         with open(json_path, 'r', encoding='utf-8') as f:
             report_data = json.load(f)
 
-        # 1. Gera o gráfico e salva localmente.
         create_profit_chart(report_data, image_path)
-
-        # 2. Faz o upload da imagem gerada.
+        
         image_url = upload_to_cloudinary(image_path)
 
         if image_url:
-            # 3. Imprime a URL para o Node.js capturar (saída padrão).
+            # MUDANÇA: A única coisa impressa no stdout em caso de sucesso é a URL.
             print(image_url)
         else:
-            sys.exit(1)
+            # Se a URL não for retornada, consideramos uma falha.
+            fail("Nao foi possivel obter a URL da imagem apos o upload.")
 
     except FileNotFoundError:
-        print(f"Erro: Arquivo JSON nao encontrado em {json_path}", file=sys.stderr)
-        sys.exit(1)
+        fail(f"Arquivo JSON nao encontrado em {json_path}")
     except json.JSONDecodeError:
-        print(f"Erro: JSON invalido em {json_path}", file=sys.stderr)
-        sys.exit(1)
+        fail(f"JSON invalido em {json_path}")
+    except Exception as e:
+        fail(f"Um erro inesperado ocorreu: {e}")
     finally:
-        # 4. Limpa os arquivos temporários, independentemente do resultado.
+        # Limpeza de arquivos temporários
         if os.path.exists(json_path):
             os.remove(json_path)
         if os.path.exists(image_path):

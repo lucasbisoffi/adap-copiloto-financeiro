@@ -9,7 +9,7 @@ export function sendGreetingMessage(twiml) {
 }
 
 export function sendHelpMessage(twiml) {
-  sendOrLogMessage(twiml,`👋 Olá! Sou o *ADAP, seu Copiloto Financeiro*.
+  twiml.message(`👋 Olá! Sou o *ADAP, seu Copiloto Financeiro*.
 
 Estou aqui para te ajudar a saber se suas corridas estão dando lucro de verdade, de um jeito fácil e direto no WhatsApp.
 
@@ -66,11 +66,11 @@ export function sendIncomeAddedMessage(twiml, incomeData) {
 
   message += `\n\n🆔 #${incomeData.messageId}`;
 
-  sendOrLogMessage(twiml,message);
+  twiml.message(message);
 }
 
 export function sendExpenseAddedMessage(twiml, expenseData) {
-  sendOrLogMessage(twiml,
+  twiml.message(
     `💸 *Gasto anotado!*
 📌 ${
       expenseData.description.charAt(0).toUpperCase() +
@@ -82,11 +82,11 @@ export function sendExpenseAddedMessage(twiml, expenseData) {
 }
 
 export function sendIncomeDeletedMessage(twiml, incomeData) {
-  sendOrLogMessage(twiml,`🗑️ Ganho _#${incomeData.messageId}_ removido.`);
+  twiml.message(`🗑️ Ganho _#${incomeData.messageId}_ removido.`);
 }
 
 export function sendExpenseDeletedMessage(twiml, expenseData) {
-  sendOrLogMessage(twiml,`🗑️ Gasto _#${expenseData.messageId}_ removido.`);
+  twiml.message(`🗑️ Gasto _#${expenseData.messageId}_ removido.`);
 }
 
 export async function sendReminderMessage(twiml, message, reminderData) {
@@ -101,7 +101,7 @@ export async function sendReminderMessage(twiml, message, reminderData) {
     timeZone: "UTC",
   });
 
-  sendOrLogMessage(twiml,
+  twiml.message(
     `*Lembrete agendado!* ✅
 ${typeEmoji[reminderData.type] || "🗓️"} *${reminderData.type}:* ${
       reminderData.description
@@ -112,15 +112,15 @@ ${typeEmoji[reminderData.type] || "🗓️"} *${reminderData.type}:* ${
 }
 
 export function sendReminderDeletedMessage(twiml, reminderData) {
-  sendOrLogMessage(twiml,`🗑️ Lembrete _#${reminderData.messageId}_ removido.`);
+  twiml.message(`🗑️ Lembrete _#${reminderData.messageId}_ removido.`);
 }
 
 export function sendTotalRemindersMessage(twiml, allFutureReminders) {
   if (!allFutureReminders || allFutureReminders.length === 0) {
-    sendOrLogMessage(twiml,"Você não tem nenhum lembrete futuro agendado. 👍");
+    twiml.message("Você não tem nenhum lembrete futuro agendado. 👍");
     return;
   }
-  sendOrLogMessage(twiml,
+  twiml.message(
     `Aqui estão seus próximos lembretes:\n\n${allFutureReminders}\n\nPara apagar um, digite "apagar lembrete #id".`
   );
 }
@@ -132,5 +132,5 @@ export async function sendFinancialHelpMessage(twiml, message) {
     messages: [{ role: "system", content: prompt }],
     max_tokens: 300,
   });
-  sendOrLogMessage(twiml,response.choices[0].message.content);
+  twiml.message(response.choices[0].message.content);
 }

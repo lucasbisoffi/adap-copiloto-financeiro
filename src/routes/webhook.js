@@ -74,7 +74,7 @@ router.post("/", async (req, res) => {
     ) {
       if (currentState) {
         delete conversationState[userId];
-        sendOrLogMessage(twiml, "Ok, operação cancelada. 👍");
+        twiml.message( "Ok, operação cancelada. 👍");
         devLog(`Fluxo cancelado pelo usuário: ${userId}`);
       } else {
         sendOrLogMessage(
@@ -270,7 +270,7 @@ router.post("/", async (req, res) => {
     // fluxo com a IA começa aqui, só é executado se nenhum fluxo de conversa estiver ativo
     const userStats = await UserStats.findOne({ userId }, { blocked: 1 });
     if (userStats?.blocked) {
-      sendOrLogMessage(twiml, "🚫 Você está bloqueado de usar a ADAP.");
+      twiml.message( "🚫 Você está bloqueado de usar a ADAP.");
       res.writeHead(200, { "Content-Type": "text/xml" });
       return res.end(twiml.toString());
     }
@@ -370,10 +370,28 @@ router.post("/", async (req, res) => {
       }
       case "generate_profit_chart": {
         const { days = 7 } = interpretation.data;
-        sendOrLogMessage(
-          twiml,
-          `📈 Certo! Gerando o gráfico de lucratividade dos últimos ${days} dias... (Funcionalidade em desenvolvimento)`
-        );
+
+        twiml.message(`📈 Certo! Preparando seu gráfico de lucratividade dos últimos ${days} dias...`);
+        
+        try {
+          devLog(`Buscando dados para o gráfico dos últimos ${days} dias...`);
+          const reportData = await getProfitReportData(userId, days);
+
+          if (reportData.length === 0) {
+            twiml.message(`📉 Não encontrei nenhuma transação nos últimos ${days} dias para gerar o gráfico.`);
+            break; 
+          }
+          
+          devLog("Gerando a imagem do gráfico...");
+          const imageUrl = await generateProfitChart(reportData, userId);
+          devLog(`Enviando imagem do gráfico: ${imageUrl}`);
+          await sendReportImage(userId, imageUrl);
+
+        } catch (error) {
+          devLog("❌ Erro ao gerar o gráfico de lucratividade:", error);
+          twiml.message("❌ Desculpe, ocorreu um erro ao tentar gerar seu gráfico. Tente novamente mais tarde.");
+        }
+        
         break;
       }
 
