@@ -1,10 +1,9 @@
 import { OpenAI } from "openai";
-import { sendOrLogMessage } from './responseHelper.js';
+import { sendOrLogMessage } from "./responseHelper.js";
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// MUDANÇA: Ambas as funções de ajuda agora têm a mesma mensagem, focada no motorista.
 export function sendGreetingMessage(twiml) {
   sendHelpMessage(twiml);
 }
@@ -39,7 +38,6 @@ Estou aqui para te ajudar a saber se suas corridas estão dando lucro de verdade
 }
 
 export function sendIncomeAddedMessage(twiml, incomeData) {
-  // --- Bloco Principal da Mensagem ---
   let sourceText =
     incomeData.source !== "Outros" ? ` da ${incomeData.source}` : "";
   let message = `💰 *Ganho anotado${sourceText}!*
@@ -49,7 +47,6 @@ export function sendIncomeAddedMessage(twiml, incomeData) {
   }
 ✅ *R$ ${incomeData.amount.toFixed(2)}* (Bruto)`;
 
-  // Se a informação não foi fornecida, mostramos um placeholder.
   const distanceText = incomeData.distance
     ? `*${incomeData.distance} km*`
     : `_Não informado_`;
@@ -62,13 +59,11 @@ export function sendIncomeAddedMessage(twiml, incomeData) {
 🛣️ Distância: ${distanceText}
 💸 Taxa App: ${taxText}`;
 
-  // O valor líquido só faz sentido se a taxa for informada.
   if (incomeData.tax) {
     const netAmount = incomeData.amount - incomeData.tax;
     message += `\n➡️ Líquido: *R$ ${netAmount.toFixed(2)}*`;
   }
 
-  // --- Bloco Final com ID ---
   message += `\n\n🆔 #${incomeData.messageId}`;
 
   twiml.message(message);

@@ -5,7 +5,7 @@ import rateLimitMongo from "rate-limit-mongo";
 
 // Bloco de verificação de variáveis de ambiente no início de tudo.
 const requiredEnvVars = [
-  "MONGODB_URI",
+  "MONGO_URI",
   "OPENAI_API_KEY",
   "TWILIO_ACCOUNT_SID",
   "TWILIO_AUTH_TOKEN",
@@ -45,7 +45,7 @@ async function startServer() {
     // 2. SÓ DEPOIS da conexão, configura o que depende dela.
     const mongoStore = new rateLimitMongo({
       // MUDANÇA: Passando a URI diretamente, como a biblioteca pediu.
-      uri: process.env.MONGODB_URI,
+      uri: process.env.MONGO_URI,
       collectionName: "rateLimits",
       // A linha 'connection' não é mais necessária.
       expireTimeMs: 60 * 1000, // É uma boa prática definir o tempo de expiração.

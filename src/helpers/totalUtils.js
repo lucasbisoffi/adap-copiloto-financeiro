@@ -71,7 +71,6 @@ export async function getPeriodSummary(
       2
     )}*`;
   }
-  // Se não especificar, calcula o lucro.
   const totalIncome = await calculateTotalIncome(userId, month);
   const totalExpenses = await calculateTotalExpenses(userId, null, month);
   const profit = totalIncome - totalExpenses;
@@ -101,7 +100,7 @@ export async function getExpensesByCategory(userId, month) {
   return await Expense.aggregate([
     { $match: matchStage },
     { $group: { _id: "$category", total: { $sum: "$amount" } } },
-    { $sort: { total: -1 } }, // Ordena do maior gasto para o menor
+    { $sort: { total: -1 } },
   ]);
 }
 
@@ -120,7 +119,7 @@ export async function getIncomesBySource(userId, month) {
   return await Income.aggregate([
     { $match: matchStage },
     { $group: { _id: "$source", total: { $sum: "$amount" } } },
-    { $sort: { total: -1 } }, // Ordena do maior ganho para o menor
+    { $sort: { total: -1 } },
   ]);
 }
 
@@ -154,7 +153,6 @@ export async function getProfitReportData(userId, days) {
     expensePromise,
   ]);
 
-  // Combina os dados em um único formato para o script Python
   const dataMap = {};
   incomes.forEach((item) => {
     dataMap[item._id] = {

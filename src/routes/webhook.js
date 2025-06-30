@@ -266,7 +266,6 @@ router.post("/", async (req, res) => {
       res.writeHead(200, { "Content-Type": "text/xml" });
       return res.end(twiml.toString());
     }
-    //roteamento de conversas termina aqui
 
     // fluxo com a IA começa aqui, só é executado se nenhum fluxo de conversa estiver ativo
     const userStats = await UserStats.findOne({ userId }, { blocked: 1 });
