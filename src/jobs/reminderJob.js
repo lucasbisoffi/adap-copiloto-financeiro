@@ -1,52 +1,60 @@
-import cron from "node-cron";
-import Reminder from "../models/Reminder.js";
-import { sendTemplatedMessage } from "../services/twilioService.js";
-import { devLog } from "../helpers/logger.js";
+import cron from 'node-cron';
+import Reminder from '../models/Reminder.js';
+// MUDANÇA: Usaremos nosso twilioService, que é mais robusto
+import { sendTemplatedMessage } from '../services/twilioService.js';
+import { devLog } from '../helpers/logger.js';
 
 async function checkAndSendReminders() {
-  devLog("⏰ Executando job de verificação de lembretes...");
-
   const now = new Date();
-  
-  const startOfTodayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
-  
-  const endOfTodayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
-  
+  devLog(`[ReminderJob] Executando... Verificando lembretes para antes de ${now.toISOString()}`);
 
   try {
-    const dueReminders = await Reminder.find({
-      reminderDate: { $gte: startOfTodayUTC, $lte: endOfTodayUTC },
-      notified: false,
-    });
+    // A consulta busca todos os lembretes cuja data/hora é agora ou já passou.
+    const dueReminders = await Reminder.find({ date: { $lte: now } });
 
     if (dueReminders.length === 0) {
-      devLog("✅ Nenhum lembrete para enviar hoje.");
+      // Silencioso se não houver nada, para não poluir os logs.
       return;
     }
-    devLog(`Encontrados ${dueReminders.length} lembretes para enviar.`);
+
+    devLog(`[ReminderJob] Encontrou ${dueReminders.length} lembrete(s) para enviar.`);
 
     for (const reminder of dueReminders) {
-      if (process.env.NODE_ENV === "production") {
-      } else {
-        devLog(
-          `DEV: [SIMULANDO ENVIO] Lembrete: "${reminder.description}" para ${reminder.userId}`
-        );
-      }
+      const messageBody = `🔔 Lembrete do seu Co-piloto ADAP:\n\n*${reminder.description}*`;
 
-      reminder.notified = true;
-      await reminder.save();
-      devLog(`Lembrete para ${reminder.userId} marcado como notificado.`);
+      try {
+        if (process.env.NODE_ENV === 'production') {
+          // Em produção, usamos o template para garantir a entrega.
+           await sendTemplatedMessage(
+            reminder.userId,
+            'lembrete_adap', // Nome do template
+            { 1: reminder.description } // A variável do template
+          );
+        } else {
+          // Em desenvolvimento, apenas simulamos.
+          devLog(`DEV: [SIMULANDO ENVIO] Lembrete: "${reminder.description}" para ${reminder.userId}`);
+        }
+        
+        devLog(`[ReminderJob] Lembrete #${reminder.messageId} processado para ${reminder.userId}.`);
+
+        // Deleta o lembrete após o envio, como na lógica original.
+        await Reminder.findByIdAndDelete(reminder._id);
+        devLog(`[ReminderJob] Lembrete #${reminder.messageId} excluído.`);
+
+      } catch (sendError) {
+        devLog(`[ReminderJob] Falha ao processar lembrete #${reminder.messageId}. Erro:`, sendError);
+      }
     }
   } catch (error) {
-    console.error("❌ Erro durante a execução do job de lembretes:", error);
+    devLog("[ReminderJob] Erro geral ao processar lembretes:", error);
   }
 }
 
 export function startReminderJob() {
-  cron.schedule("* 6 * * *", checkAndSendReminders, {
-    scheduled: true,
-    timezone: "America/Sao_Paulo",
+  devLog("[Scheduler] Job de lembretes iniciado. Verificando a cada minuto.");
+  // Roda a cada minuto para garantir a precisão do horário.
+  cron.schedule("* * * * *", checkAndSendReminders, {
+      scheduled: true,
+      timezone: "America/Sao_Paulo"
   });
-
-  devLog("🚀 Job de lembretes agendado para rodar a cada minuto (MODO DE TESTE).");
 }

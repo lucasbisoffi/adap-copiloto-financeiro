@@ -1,7 +1,7 @@
 // src/helpers/responseHelper.js
 import { devLog } from './logger.js';
 
-//substituir 'twiml.message(' por 'sendOrLogMessage(twiml,'
+//substituir 'twiml.message(' por 'sendOrLogMessage(twiml,' no webhook.js e messages.js
 
 /**
  * Lida com o envio de mensagens, enviando para o Twilio em produção

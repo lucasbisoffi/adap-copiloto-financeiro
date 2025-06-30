@@ -73,8 +73,8 @@ router.post("/", async (req, res) => {
       )
     ) {
       if (currentState) {
-        delete conversationState[userId]; 
-        twiml.message("Ok, operação cancelada. 👍");
+        delete conversationState[userId];
+        sendOrLogMessage(twiml, "Ok, operação cancelada. 👍");
         devLog(`Fluxo cancelado pelo usuário: ${userId}`);
       } else {
         sendOrLogMessage(
@@ -270,15 +270,18 @@ router.post("/", async (req, res) => {
     // fluxo com a IA começa aqui, só é executado se nenhum fluxo de conversa estiver ativo
     const userStats = await UserStats.findOne({ userId }, { blocked: 1 });
     if (userStats?.blocked) {
-      twiml.message("🚫 Você está bloqueado de usar a ADAP.");
+      sendOrLogMessage(twiml, "🚫 Você está bloqueado de usar a ADAP.");
       res.writeHead(200, { "Content-Type": "text/xml" });
       return res.end(twiml.toString());
     }
 
     const generateId = customAlphabet("1234567890abcdef", 5);
 
-    const todayISO = new Date().toISOString(); 
-    const interpretation = await interpretDriverMessage(messageToProcess, todayISO);
+    const todayISO = new Date().toISOString();
+    const interpretation = await interpretDriverMessage(
+      messageToProcess,
+      todayISO
+    );
     devLog("Intenção da IA:", interpretation.intent);
 
     switch (interpretation.intent) {
@@ -373,119 +376,11 @@ router.post("/", async (req, res) => {
         );
         break;
       }
-      case "get_expenses_by_category": {
-        const now = new Date();
-        const month = `${now.getFullYear()}-${String(
-          now.getMonth() + 1
-        ).padStart(2, "0")}`;
-        const monthNameRaw = now.toLocaleString("pt-BR", { month: "long" });
-        const monthName =
-          monthNameRaw.charAt(0).toUpperCase() + monthNameRaw.slice(1);
 
-        const expenses = await getExpensesByCategory(userId, month);
-
-        if (expenses.length === 0) {
-          sendOrLogMessage(
-            twiml,
-            `Você não tem nenhum gasto registrado em *${monthName}*.`
-          );
-          break;
-        }
-
-        let message = `*Gastos de ${monthName} por Categoria* 💸\n\n`;
-        let totalSpent = 0;
-        expenses.forEach((exp) => {
-          message += `*${exp._id}*: R$ ${exp.total.toFixed(2)}\n`;
-          totalSpent += exp.total;
-        });
-
-        message += `\n*Total Gasto:* R$ ${totalSpent.toFixed(2)}`;
-        message += `\n\n_Digite "detalhes gastos" para ver a lista completa._`;
-
-        conversationState[userId] = {
-          type: "expense",
-          month: month,
-          monthName: monthName,
-        };
-
-        twiml.message(message);
-        break;
-      }
-      case "get_incomes_by_source": {
-        const now = new Date();
-        const month = `${now.getFullYear()}-${String(
-          now.getMonth() + 1
-        ).padStart(2, "0")}`;
-        const monthNameRaw = now.toLocaleString("pt-BR", { month: "long" });
-        const monthName =
-          monthNameRaw.charAt(0).toUpperCase() + monthNameRaw.slice(1);
-
-        const incomes = await getIncomesBySource(userId, month);
-
-        if (incomes.length === 0) {
-          sendOrLogMessage(
-            twiml,
-            `Você não tem nenhuma receita registrada em *${monthName}*.`
-          );
-          break;
-        }
-
-        let message = `*Ganhos de ${monthName} por Plataforma* 💰\n\n`;
-        let totalIncome = 0;
-        incomes.forEach((inc) => {
-          message += `*${inc._id}*: R$ ${inc.total.toFixed(2)}\n`;
-          totalIncome += inc.total;
-        });
-
-        message += `\n*Total Recebido:* R$ ${totalIncome.toFixed(2)}`;
-        message += `\n\n_Digite "detalhes receitas" para ver a lista completa._`;
-
-        conversationState[userId] = {
-          type: "income",
-          month: month,
-          monthName: monthName,
-        };
-
-        twiml.message(message);
-        break;
-      }
-      case "get_transaction_details": {
-        let { type } = interpretation.data;
-        const previousData = conversationState[userId];
-
-        if (!previousData || !previousData.month) {
-          sendOrLogMessage(
-            twiml,
-            "Não há um relatório recente para detalhar. Peça um resumo de gastos ou receitas primeiro."
-          );
-          break;
-        }
-
-        if (!type) {
-          type = previousData.type;
-        }
-
-        if (!type) {
-          sendOrLogMessage(
-            twiml,
-            'Por favor, especifique o que deseja detalhar. Ex: "detalhes gastos" ou "detalhes receitas".'
-          );
-          break;
-        }
-        const { month, monthName } = previousData;
-        devLog(`Buscando detalhes para: Tipo=${type}, Mês=${month}`);
-        const detailsMessage =
-          type === "income"
-            ? await getIncomeDetails(userId, month, monthName)
-            : await getExpenseDetails(userId, month, monthName);
-
-        twiml.message(detailsMessage);
-        delete conversationState[userId];
-        break;
-      }
       case "get_summary": {
         let { month, monthName } = interpretation.data;
-        if (!month || !monthName) {
+
+        if (!month) {
           const now = new Date();
           month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
             2,
@@ -497,66 +392,207 @@ router.post("/", async (req, res) => {
         }
 
         devLog(`Calculando resumo de LUCRO para: Mês=${month}`);
-        const summaryMessage = await getPeriodSummary(
-          userId,
-          month,
-          monthName,
-          null,
-          null 
-        );
+        const summaryMessage = await getPeriodSummary(userId, month, monthName);
 
         twiml.message(summaryMessage);
-        conversationState[userId] = {
-          type: null, 
-          month: month,
-          monthName: monthName,
-        };
-
         break;
       }
+      case "get_expenses_by_category": {
+        let { month, monthName, category } = interpretation.data;
+
+        if (!month) {
+          const now = new Date();
+          month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
+            2,
+            "0"
+          )}`;
+          const monthNameRaw = now.toLocaleString("pt-BR", { month: "long" });
+          monthName =
+            monthNameRaw.charAt(0).toUpperCase() + monthNameRaw.slice(1);
+        }
+
+        devLog(
+          `Buscando gastos por categoria: Mês=${month}, Categoria=${
+            category || "Todas"
+          }`
+        );
+        const expenses = await getExpensesByCategory(userId, month, category);
+        if (expenses.length === 0) {
+          twiml.message(
+            `Você não tem nenhum gasto registrado em *${monthName}* ${
+              category ? `na categoria *${category}*` : ""
+            }.`
+          );
+          break;
+        }
+
+        let message = `*Gastos de ${monthName}${
+          category ? ` em ${category}` : ""
+        }* 💸\n\n`;
+        let totalSpent = 0;
+
+        expenses.forEach((exp) => {
+          const groupName = category ? exp.description : exp._id;
+          message += `*${groupName}*: R$ ${exp.total.toFixed(2)}\n`;
+          totalSpent += exp.total;
+        });
+
+        message += `\n*Total Gasto:* R$ ${totalSpent.toFixed(2)}`;
+        message += `\n\n_Digite "detalhes gastos" para ver a lista completa._`;
+        conversationState[userId] = {
+          type: "expense",
+          month,
+          monthName,
+          category,
+        };
+        twiml.message(message);
+        break;
+      }
+      case "get_incomes_by_source": {
+        let { month, monthName, source } = interpretation.data;
+
+        if (!month) {
+          const now = new Date();
+          month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
+            2,
+            "0"
+          )}`;
+          const monthNameRaw = now.toLocaleString("pt-BR", { month: "long" });
+          monthName =
+            monthNameRaw.charAt(0).toUpperCase() + monthNameRaw.slice(1);
+        }
+
+        devLog(
+          `Buscando ganhos por plataforma: Mês=${month}, Fonte=${
+            source || "Todas"
+          }`
+        );
+        const incomes = await getIncomesBySource(userId, month, source);
+
+        if (incomes.length === 0) {
+          twiml.message(
+            `Você não tem nenhuma receita registrada em *${monthName}* ${
+              source ? `da plataforma *${source}*` : ""
+            }.`
+          );
+          break;
+        }
+
+        let message = `*Ganhos de ${monthName}${
+          source ? ` da ${source}` : ""
+        }* 💰\n\n`;
+        let totalIncome = 0;
+
+        incomes.forEach((inc) => {
+          const groupName = source ? inc.description : inc._id;
+          message += `*${groupName}*: R$ ${inc.total.toFixed(2)}\n`;
+          totalIncome += inc.total;
+        });
+
+        message += `\n*Total Recebido:* R$ ${totalIncome.toFixed(2)}`;
+        message += `\n\n_Digite "detalhes receitas" para ver a lista completa._`;
+
+        conversationState[userId] = {
+          type: "income",
+          month,
+          monthName,
+          source,
+        };
+        twiml.message(message);
+        break;
+      }
+      case "get_transaction_details": {
+        let { type } = interpretation.data;
+        const previousData = conversationState[userId];
+
+        if (!previousData || !previousData.month) {
+          twiml.message(
+            "Não há um relatório recente para detalhar. Peça um resumo de gastos ou ganhos primeiro."
+          );
+          break;
+        }
+
+        if (!type) {
+          type = previousData.type;
+        }
+
+        if (!type) {
+          twiml.message(
+            'Por favor, especifique o que deseja detalhar. Ex: "detalhes gastos" ou "detalhes receitas".'
+          );
+          break;
+        }
+
+        const { month, monthName, category, source } = previousData;
+        devLog(`Buscando detalhes para: Tipo=${type}, Mês=${month}`);
+
+        const detailsMessage =
+          type === "income"
+            ? await getIncomeDetails(userId, month, monthName, source)
+            : await getExpenseDetails(userId, month, monthName, category);
+
+        twiml.message(detailsMessage);
+        delete conversationState[userId];
+        break;
+      }
+
       case "greeting": {
         sendGreetingMessage(twiml);
         break;
       }
       case "add_reminder": {
-        const { description, reminderDate, type } = interpretation.data;
-        const dateFromAI = new Date(reminderDate);
-        const normalizedDate = new Date(Date.UTC(
-          dateFromAI.getUTCFullYear(),
-          dateFromAI.getUTCMonth(),
-          dateFromAI.getUTCDate(),
-          0, 0, 0, 0 
-        ));
-        
+        const { description, date } = interpretation.data;
+        const TIMEZONE = "America/Sao_Paulo"; // Define o fuso horário de referência
+
+        if (!date) {
+          twiml.message(
+            "⏰ Por favor, forneça uma data e hora futuras válidas. Ex: 'Lembrar de ligar para o dentista amanhã às 14h'."
+          );
+          break;
+        }
+
+        // Converte a data/hora recebida da IA (que já está em UTC) para um objeto Date.
+        const dateToSave = new Date(date);
+
+        // Verifica se a data está no futuro.
+        if (!(dateToSave > new Date())) {
+          twiml.message(
+            "⏰ Ops, essa data já passou! Por favor, forneça uma data e hora futuras."
+          );
+          break;
+        }
+
         const newReminder = new Reminder({
-          userId,
-          description,
-          reminderDate: normalizedDate,
-          type,
+          userId, // Usando nosso userId string
+          description: description,
+          date: dateToSave,
           messageId: generateId(),
         });
 
         await newReminder.save();
-        devLog("Novo lembrete salvo:", newReminder);
-        
+        // A função sendReminderMessage já existe e funcionará bem aqui.
         await sendReminderMessage(twiml, messageToProcess, newReminder);
         break;
       }
       case "delete_reminder": {
         const { messageId } = interpretation.data;
-        const reminder = await Reminder.findOneAndDelete({ userId, messageId });
+        // A busca é apenas por userId e messageId.
+        const reminder = await Reminder.findOneAndDelete({
+          userId,
+          messageId,
+        });
         if (reminder) {
           sendReminderDeletedMessage(twiml, reminder);
         } else {
-          sendOrLogMessage(
-            twiml,
+          twiml.message(
             `🚫 Nenhum lembrete com o ID _#${messageId}_ foi encontrado.`
           );
         }
         break;
       }
       case "list_reminders": {
-        const totalReminders = await getTotalReminders(userId);
+        // Renomeamos get_total_reminders para list_reminders
+        const totalReminders = await getTotalReminders(userId); // Esta função em totalUtils.js precisará ser atualizada.
         sendTotalRemindersMessage(twiml, totalReminders);
         break;
       }

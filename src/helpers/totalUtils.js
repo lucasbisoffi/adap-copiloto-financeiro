@@ -26,7 +26,6 @@ export async function calculateTotalIncome(
   ]);
   return result.length > 0 ? result[0].total : 0;
 }
-
 export async function calculateTotalExpenses(
   userId,
   category = null,
@@ -51,7 +50,6 @@ export async function calculateTotalExpenses(
   ]);
   return result.length > 0 ? result[0].total : 0;
 }
-
 export async function getPeriodSummary(
   userId,
   month,
@@ -84,45 +82,6 @@ export async function getPeriodSummary(
 
   return message;
 }
-
-export async function getExpensesByCategory(userId, month) {
-  const [year, monthNumber] = month.split("-");
-  const matchStage = {
-    userId,
-    date: {
-      $gte: new Date(Date.UTC(parseInt(year), parseInt(monthNumber) - 1, 1)),
-      $lte: new Date(
-        Date.UTC(parseInt(year), parseInt(monthNumber), 0, 23, 59, 59)
-      ),
-    },
-  };
-
-  return await Expense.aggregate([
-    { $match: matchStage },
-    { $group: { _id: "$category", total: { $sum: "$amount" } } },
-    { $sort: { total: -1 } },
-  ]);
-}
-
-export async function getIncomesBySource(userId, month) {
-  const [year, monthNumber] = month.split("-");
-  const matchStage = {
-    userId,
-    date: {
-      $gte: new Date(Date.UTC(parseInt(year), parseInt(monthNumber) - 1, 1)),
-      $lte: new Date(
-        Date.UTC(parseInt(year), parseInt(monthNumber), 0, 23, 59, 59)
-      ),
-    },
-  };
-
-  return await Income.aggregate([
-    { $match: matchStage },
-    { $group: { _id: "$source", total: { $sum: "$amount" } } },
-    { $sort: { total: -1 } },
-  ]);
-}
-
 export async function getProfitReportData(userId, days) {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
@@ -174,8 +133,94 @@ export async function getProfitReportData(userId, days) {
   );
   return combinedData;
 }
+export async function getTotalReminders(userId) {
+  // Busca lembretes que ainda não venceram e os ordena do mais próximo para o mais distante.
+  const reminders = await Reminder.find({
+    userId,
+    date: { $gte: new Date() },
+  }).sort({ date: 1 });
 
-export async function getIncomeDetails(userId, month, monthName) {
+  if (reminders.length === 0) {
+    return ""; // Retorna vazio para a mensagem padrão ser exibida
+  }
+
+  // Formata a data e a hora para o fuso horário do Brasil.
+  return reminders
+    .map((r) => {
+      const formattedDateTime = new Intl.DateTimeFormat("pt-BR", {
+        dateStyle: "short",
+        timeStyle: "short",
+        timeZone: "America/Sao_Paulo",
+      }).format(new Date(r.date));
+
+      return `🗓️ *${r.description}* - ${formattedDateTime} (#${r.messageId})`;
+    })
+    .join("\n");
+}
+
+export async function getExpensesByCategory(userId, month, category = null) {
+  const [year, monthNumber] = month.split("-");
+  const matchStage = {
+    userId,
+    date: {
+      $gte: new Date(Date.UTC(parseInt(year), parseInt(monthNumber) - 1, 1)),
+      $lte: new Date(
+        Date.UTC(parseInt(year), parseInt(monthNumber), 0, 23, 59, 59)
+      ),
+    },
+  };
+
+  // Se uma categoria específica for fornecida, adicionamos ao filtro.
+  if (category) {
+    matchStage.category = category;
+  }
+
+  // Se a consulta for para uma categoria específica, agrupamos por descrição para ver os itens.
+  // Se for geral, agrupamos por categoria para ver os totais de cada uma.
+  const groupStage = {
+    _id: category ? "$description" : "$category",
+    total: { $sum: "$amount" },
+  };
+
+  return await Expense.aggregate([
+    { $match: matchStage },
+    { $group: groupStage },
+    { $sort: { total: -1 } },
+  ]);
+}
+
+export async function getIncomesBySource(userId, month, source = null) {
+  const [year, monthNumber] = month.split("-");
+  const matchStage = {
+    userId,
+    date: {
+      $gte: new Date(Date.UTC(parseInt(year), parseInt(monthNumber) - 1, 1)),
+      $lte: new Date(
+        Date.UTC(parseInt(year), parseInt(monthNumber), 0, 23, 59, 59)
+      ),
+    },
+  };
+
+  // Se uma fonte específica for fornecida, adicionamos ao filtro.
+  if (source) {
+    matchStage.source = source;
+  }
+
+  // Se a consulta for para uma fonte específica, agrupamos por descrição.
+  // Se for geral, agrupamos por fonte.
+  const groupStage = {
+    _id: source ? "$description" : "$source",
+    total: { $sum: "$amount" },
+  };
+
+  return await Income.aggregate([
+    { $match: matchStage },
+    { $group: groupStage },
+    { $sort: { total: -1 } },
+  ]);
+}
+
+export async function getIncomeDetails(userId, month, monthName, source = null) {
   let matchStage = { userId };
   const [year, monthNumber] = month.split("-");
   matchStage.date = {
@@ -185,26 +230,40 @@ export async function getIncomeDetails(userId, month, monthName) {
     ),
   };
 
-  const incomes = await Income.find(matchStage).sort({ source: 1, date: 1 });
-  if (incomes.length === 0) return "Nenhum ganho encontrado para este período.";
+  // Adiciona o filtro de fonte, se fornecido.
+  if (source) {
+    matchStage.source = source;
+  }
 
-  let message = `🧾 *Detalhes dos Ganhos em ${monthName}*:\n\n`;
+  const incomes = await Income.find(matchStage).sort({ source: 1, date: 1 });
+  if (incomes.length === 0)
+    return `Nenhum ganho encontrado em *${monthName}* ${
+      source ? `da plataforma *${source}*` : ""
+    }.`;
+
+  let message = `🧾 *Detalhes dos Ganhos em ${monthName}${
+    source ? ` (${source})` : ""
+  }*:\n\n`;
   const incomesBySource = {};
   incomes.forEach((income) => {
-    const source = income.source || "Outros";
-    if (!incomesBySource[source]) incomesBySource[source] = [];
-    incomesBySource[source].push(
+    const groupKey = income.source || "Outros";
+    if (!incomesBySource[groupKey]) incomesBySource[groupKey] = [];
+    incomesBySource[groupKey].push(
       `   💰 ${income.description}: *R$ ${income.amount.toFixed(2)}*`
     );
   });
 
-  for (const source in incomesBySource) {
-    message += `*${source}*:\n${incomesBySource[source].join("\n")}\n\n`;
+  for (const groupKey in incomesBySource) {
+    // Se a consulta já era para uma fonte específica, não precisamos repetir o título.
+    if (!source) {
+      message += `*${groupKey}*:\n`;
+    }
+    message += `${incomesBySource[groupKey].join("\n")}\n\n`;
   }
   return message.trim();
 }
 
-export async function getExpenseDetails(userId, month, monthName) {
+export async function getExpenseDetails(userId, month, monthName, category = null) {
   let matchStage = { userId };
   const [year, monthNumber] = month.split("-");
   matchStage.date = {
@@ -213,55 +272,38 @@ export async function getExpenseDetails(userId, month, monthName) {
       Date.UTC(parseInt(year), parseInt(monthNumber), 0, 23, 59, 59)
     ),
   };
+
+  // Adiciona o filtro de categoria, se fornecido.
+  if (category) {
+    matchStage.category = category;
+  }
 
   const expenses = await Expense.find(matchStage).sort({
     category: 1,
     date: 1,
   });
   if (expenses.length === 0)
-    return "Nenhum gasto encontrado para este período.";
+    return `Nenhum gasto encontrado em *${monthName}* ${
+      category ? `na categoria *${category}*` : ""
+    }.`;
 
-  let message = `🧾 *Detalhes dos Gastos em ${monthName}*:\n\n`;
+  let message = `🧾 *Detalhes dos Gastos em ${monthName}${
+    category ? ` (${category})` : ""
+  }*:\n\n`;
   const expensesByCategory = {};
   expenses.forEach((expense) => {
-    const cat = expense.category || "Outros";
-    if (!expensesByCategory[cat]) expensesByCategory[cat] = [];
-    expensesByCategory[cat].push(
+    const groupKey = expense.category || "Outros";
+    if (!expensesByCategory[groupKey]) expensesByCategory[groupKey] = [];
+    expensesByCategory[groupKey].push(
       `   💸 ${expense.description}: *R$ ${expense.amount.toFixed(2)}*`
     );
   });
 
-  for (const cat in expensesByCategory) {
-    message += `*${cat}*:\n${expensesByCategory[cat].join("\n")}\n\n`;
+  for (const groupKey in expensesByCategory) {
+    if (!category) {
+      message += `*${groupKey}*:\n`;
+    }
+    message += `${expensesByCategory[groupKey].join("\n")}\n\n`;
   }
   return message.trim();
-}
-
-export async function getTotalReminders(userId) {
-  const reminders = await Reminder.find({
-    userId,
-    reminderDate: { $gte: new Date() },
-    notified: false,
-  }).sort({ reminderDate: 1 });
-
-  if (reminders.length === 0) return "";
-
-  const typeEmoji = {
-    Pagamento: "💳",
-    Manutenção: "🔧",
-    Documento: "📄",
-    Outro: "🗓️",
-  };
-
-  return reminders
-    .map((r) => {
-      const dateObj = new Date(r.reminderDate);
-      const formattedDate = dateObj.toLocaleDateString("pt-BR", {
-        timeZone: "UTC",
-      });
-      return `${typeEmoji[r.type] || "🗓️"} *${r.type}:* ${
-        r.description
-      } - *${formattedDate}* (#${r.messageId})`;
-    })
-    .join("\n");
 }

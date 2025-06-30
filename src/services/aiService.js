@@ -52,6 +52,31 @@ export async function transcribeAudioWithWhisper(audioUrl) {
 }
 
 export async function interpretDriverMessage(message, currentDate) {
+  // --- LÓGICA DE DATA DINÂMICA ---
+  const now = new Date(currentDate);
+
+  const currentYear = now.getFullYear();
+  const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const currentDay = String(now.getDate()).padStart(2, '0');
+  
+  const monthName = now.toLocaleString('pt-BR', { month: 'long' });
+  const dayOfWeekName = now.toLocaleString('pt-BR', { weekday: 'long' });
+
+  // Calcular "amanhã"
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const tomorrowISO = tomorrow.toISOString().split('T')[0]; // Apenas a parte da data
+
+  // --- INÍCIO DA MUDANÇA ---
+  // Calcular "mês que vem" para os exemplos
+  const nextMonthDate = new Date(now);
+  nextMonthDate.setMonth(now.getMonth() + 1);
+  
+  const nextMonthYear = nextMonthDate.getFullYear();
+  const nextMonthNumber = String(nextMonthDate.getMonth() + 1).padStart(2, '0');
+  // A data exata para o exemplo será dia 15 do próximo mês, às 09:00 UTC.
+  const nextMonthExampleISO = `${nextMonthYear}-${nextMonthNumber}-15T09:00:00.000Z`;
+
   const systemPrompt = `
   Você é o "ADAP", um co-piloto financeiro especialista para motoristas de aplicativo. Sua tarefa é interpretar mensagens em português do Brasil e extrair dados financeiros estruturados. Seja preciso e entenda o jargão do dia a dia de um motorista.
 
@@ -100,7 +125,7 @@ export async function interpretDriverMessage(message, currentDate) {
 
   4. EXTRAIA DADOS PARA "add_reminder":
      - description: O que é o lembrete.
-     - reminderDate: A data futura no formato ISO 8601 (YYYY-MM-DDTHH:mm:ss.sssZ). A data de hoje é ${currentDate}. Interprete "hoje", "amanhã", "semana que vem" com base nisso.
+     - reminderDate: A data E HORA futuras no formato ISO 8601 (YYYY-MM-DDTHH:mm:ss.sssZ). A data de hoje é ${currentDate}. Interprete "amanhã às 14h", "hoje às 19:30", etc. Se a hora não for especificada, use 09:00 como padrão.
      - type: CLASSIFIQUE OBRIGATORIAMENTE em um dos seguintes: ['Pagamento', 'Manutenção', 'Documento', 'Outro'].
 
   5. FORMATO DA RESPOSTA:
@@ -126,38 +151,67 @@ export async function interpretDriverMessage(message, currentDate) {
   EXEMPLOS:
   - User: "150 de gasolina"
     Response: { "intent": "add_expense", "data": { "amount": 150, "description": "gasolina", "category": "Combustível" } }
-  - User: "ganhei 55 numa corrida da uber"
-    Response: { "intent": "add_income", "data": { "amount": 55, "description": "corrida", "category": "Corrida", "source": "Uber" } }
-  - User: "99 pagou 30 reais"
-    Response: { "intent": "add_income", "data": { "amount": 30, "description": "pagamento", "category": "Corrida", "source": "99" } }
-  - User: "corrida de 25 reais e 10km na 99, taxa de 5"
-    Response: { "intent": "add_income", "data": { "amount": 25, "description": "corrida de 10km", "category": "Corrida", "source": "99", "tax": 5, "distance": 10 } }
   - User: "45 na troca de oleo"
     Response: { "intent": "add_expense", "data": { "amount": 45, "description": "troca de oleo", "category": "Manutenção" } }
   - User: "paguei 350 no aluguel do carro"
-    Response: { "intent": "add_expense", "data": { "amount": 350, "description": "aluguel do carro", "category": "Aluguel do Veículo" } }
+    Response: { "intent": "add_expense", "data": { "amount": 350, "description": "aluguel do carro", "category": "Aluguel do Veículo" } }  
+
+  - User: "ganhei 55 numa corrida da uber"
+    Response: { "intent": "add_income", "data": { "amount": 55, "description": "corrida", "category": "Corrida", "source": "Uber" } }
+  - User: "corrida de 35 na 99, foram 10km com taxa de 12"
+    Response: { "intent": "add_income", "data": { "amount": 35, "description": "corrida de 10km", "category": "Corrida", "source": "99", "tax": 12, "distance": 10 } }
+  - User: "99 pagou 30 reais"
+    Response: { "intent": "add_income", "data": { "amount": 30, "description": "pagamento", "category": "Corrida", "source": "99" } }
+
   - User: "resumo do mês"
-    Response: { "intent": "get_summary", "data": { "month": "2025-06" } }
+    Response: { "intent": "get_summary", "data": { "month": "${currentYear}-${currentMonth}", "monthName": "${monthName}" } }
+  - User: "qual foi meu lucro em janeiro?"
+    Response: { "intent": "get_summary", "data": { "month": "${currentYear}-01", "monthName": "Janeiro" } }
+
   - User: "gasto total"
     Response: { "intent": "get_expenses_by_category", "data": {} }
+  - User: "quanto gastei de combustível esse mês?"
+    Response: { "intent": "get_expenses_by_category", "data": { "category": "Combustível", "month": "${currentYear}-${currentMonth}", "monthName": "${monthName}" } }
+  - User: "ver meus gastos"
+    Response: { "intent": "get_expenses_by_category", "data": {} }
+
   - User: "receita total"
     Response: { "intent": "get_incomes_by_source", "data": {} }
+  - User: "quanto ganhei na uber em fevereiro?"
+    Response: { "intent": "get_incomes_by_source", "data": { "source": "Uber", "month": "${currentYear}-02", "monthName": "Fevereiro" } }
+  - User: "ver meus ganhos"
+    Response: { "intent": "get_incomes_by_source", "data": {} }
+
+  - User: "resumo da semana"
+    Response: { "intent": "generate_profit_chart", "data": { "days": 7 } }
+
   - User: "detalhes gastos"
     Response: { "intent": "get_transaction_details", "data": { "type": "expense" } }
-  - User: "detalhar receitas"
+  - User: "detalhes receitas"
     Response: { "intent": "get_transaction_details", "data": { "type": "income" } }
   - User: "ver detalhes"
     Response: { "intent": "get_transaction_details", "data": {} }  
-  - User: "quanto ganhei na uber esse mês?"
-    Response: { "intent": "get_summary", "data": { "source": "Uber", "month": "2024-08" } }
-  - User: "lembrete pagar seguro dia 20"
-    Response: { "intent": "add_reminder", "data": { "description": "pagar seguro", "reminderDate": "2024-08-20T00:00:00.000Z", "type": "Pagamento" } }
-  - User: "cadastrar meu carro"
+
+  // --- Exemplos de Lembretes (com data e hora) ---
+  - User: "lembrete pagar o seguro do carro dia 15 deste mês"
+    Response: { "intent": "add_reminder", "data": { "description": "pagar o seguro do carro", "date": "${currentYear}-${currentMonth}-15T09:00:00.000Z" } }
+  - User: "me lembre de pagar a manutenção do carro dia 15 do mês que vem"
+    Response: { "intent": "add_reminder", "data": { "description": "pagar a manutenção do carro", "date": "${nextMonthExampleISO}", "type": "Manutenção" } }
+  - User: "lembrete trocar o óleo amanhã às 15h"
+    Response: { "intent": "add_reminder", "data": { "description": "trocar o óleo", "date": "${tomorrowISO.replace('T00:00:00.000Z', 'T15:00:00.000Z')}" } }
+
+  // --- Exemplos de Comandos Gerais ---
+  - User: "quero cadastrar meu veiculo"
     Response: { "intent": "register_vehicle", "data": {} }
-  - User: "quero adicionar meu onix"
-    Response: { "intent": "register_vehicle", "data": {} }
+  - User: "remover #a4b8c"
+    Response: { "intent": "delete_transaction", "data": { "messageId": "a4b8c" } }
+  - User: "quais meus lembretes?"
+    Response: { "intent": "list_reminders", "data": {} }
   - User: "Olá"
     Response: { "intent": "greeting", "data": {} }
+  - User: "ajuda"
+    Response: { "intent": "instructions", "data": {} }
+
 
   Agora, interprete esta mensagem: "${message}"
   `;
