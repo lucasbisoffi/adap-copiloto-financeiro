@@ -18,16 +18,15 @@ async function checkAndSendReminders() {
 
     for (const reminder of dueReminders) {
       try {
-        // --- MUDANÇA: O envio agora acontece em TODOS os ambientes ---
-        devLog(`Enviando lembrete via Twilio: "${reminder.description}" para ${reminder.userId}`);
+        devLog(`Processando lembrete para ${reminder.userId}: "${reminder.description}"`);
         
         await sendTemplatedMessage(
           reminder.userId,
-          process.env.TWILIO_TEMPLATE_NAME, // Usando uma variável de ambiente para o nome
-          { 1: reminder.description } 
+          process.env.TWILIO_TEMPLATE_NAME,
+          { 1: reminder.description } // A variável {{1}} do template será a descrição.
         );
         
-        devLog(`[ReminderJob] Lembrete #${reminder.messageId} processado para ${reminder.userId}.`);
+        devLog(`[ReminderJob] Lembrete #${reminder.messageId} processado com sucesso.`);
 
         await Reminder.findByIdAndDelete(reminder._id);
         devLog(`[ReminderJob] Lembrete #${reminder.messageId} excluído.`);
@@ -42,7 +41,7 @@ async function checkAndSendReminders() {
 }
 
 export function startReminderJob() {
-  const schedule = '* * * * *'; // Roda a cada minuto.
+  const schedule = '* * * * *'; // Roda a cada minuto para precisão no horário.
   devLog(`[Scheduler] Job de lembretes iniciado. Verificando a cada minuto.`);
   
   cron.schedule(schedule, checkAndSendReminders, {
