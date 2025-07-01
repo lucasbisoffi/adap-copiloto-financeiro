@@ -11,7 +11,7 @@ import {
   transcribeAudioWithWhisper,
 } from "../services/aiService.js";
 import { generateProfitChart } from "../services/chartService.js";
-import { sendReportImage } from "../services/twilioService.js"; //
+import { sendReportImage } from "../services/twilioService.js"; 
 
 import { devLog } from "../helpers/logger.js";
 import {
@@ -586,7 +586,6 @@ router.post("/", async (req, res) => {
         
         const dateToSave = new Date(date);
         
-        // A verificação de data futura permanece a mesma.
         if (dateToSave.getTime() <= Date.now()) {
           twiml.message( "⏰ Ops, esse horário já passou! Por favor, forneça uma data e hora futuras.");
           break;
@@ -595,7 +594,7 @@ router.post("/", async (req, res) => {
         const newReminder = new Reminder({
           userId,
           description: description,
-          date: dateToSave, // Salva a data UTC diretamente.
+          date: dateToSave, 
           type: type || 'Outro',
           messageId: generateId(),
         });
@@ -606,7 +605,6 @@ router.post("/", async (req, res) => {
       }
       case "delete_reminder": {
         const { messageId } = interpretation.data;
-        // A busca é apenas por userId e messageId.
         const reminder = await Reminder.findOneAndDelete({
           userId,
           messageId,
@@ -622,8 +620,7 @@ router.post("/", async (req, res) => {
         break;
       }
       case "list_reminders": {
-        // Renomeamos get_total_reminders para list_reminders
-        const totalReminders = await getTotalReminders(userId); // Esta função em totalUtils.js precisará ser atualizada.
+        const totalReminders = await getTotalReminders(userId);
         sendTotalRemindersMessage(twiml, totalReminders);
         break;
       }

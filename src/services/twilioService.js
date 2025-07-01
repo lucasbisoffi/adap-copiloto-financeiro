@@ -26,10 +26,7 @@ export async function sendTemplatedMessage(to, templateName, bodyVariables) {
     await client.messages.create({
       from: twilioPhoneNumber,
       to: to,
-      // O 'contentSid' é o ID do seu template no Twilio.
-      // Você o encontra no painel do Twilio após a aprovação.
-      contentSid: process.env.TWILIO_TEMPLATE_SID, // Ex: 'HX...'
-      // As variáveis que preencherão os campos {{1}}, {{2}}, etc.
+      contentSid: process.env.TWILIO_TEMPLATE_SID, 
       contentVariables: JSON.stringify(bodyVariables),
     });
     console.log(`Mensagem de template '${templateName}' enviada para ${to}`);

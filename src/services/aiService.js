@@ -13,37 +13,30 @@ const pipeline = promisify(stream.pipeline);
 
 export async function transcribeAudioWithWhisper(audioUrl) {
   try {
-    // 1. Fazer o download do arquivo de áudio da URL fornecida pelo Twilio.
     const response = await axios({
       method: "get",
       url: audioUrl,
-      responseType: "stream", // Importante para lidar com o arquivo como um fluxo de dados.
-      // O Twilio protege o acesso à URL da mídia com autenticação.
+      responseType: "stream",
       auth: {
         username: process.env.TWILIO_ACCOUNT_SID,
         password: process.env.TWILIO_AUTH_TOKEN,
       },
     });
 
-    // 2. Definir um caminho temporário para salvar o áudio.
     const tempFilePath = path.join("/tmp", `user_audio_${Date.now()}.ogg`);
 
-    // 3. Salvar o fluxo de áudio no arquivo temporário.
     await pipeline(response.data, fs.createWriteStream(tempFilePath));
 
-    // 4. Enviar o arquivo salvo para a API do Whisper para transcrição.
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tempFilePath),
       model: "whisper-1",
-      language: "pt", // Especificar o idioma melhora a precisão.
+      language: "pt", 
     });
 
-    // 5. Apagar o arquivo temporário após a transcrição para não ocupar espaço.
     if (fs.existsSync(tempFilePath)) {
       fs.unlinkSync(tempFilePath);
     }
 
-    // 6. Retornar o texto puro da transcrição.
     return transcription.text;
   } catch (error) {
     console.error("Erro no processo de transcrição com Whisper:", error);
@@ -52,7 +45,6 @@ export async function transcribeAudioWithWhisper(audioUrl) {
 }
 
 export async function interpretDriverMessage(message, currentDate) {
-  // --- LÓGICA DE DATA DINÂMICA ---
   const now = new Date(currentDate);
 
   const currentYear = now.getFullYear();
@@ -62,19 +54,17 @@ export async function interpretDriverMessage(message, currentDate) {
   const monthName = now.toLocaleString('pt-BR', { month: 'long' });
   const dayOfWeekName = now.toLocaleString('pt-BR', { weekday: 'long' });
 
-  // Calcular "amanhã"
   const tomorrow = new Date(now);
   tomorrow.setDate(now.getDate() + 1);
-  const tomorrowISO = tomorrow.toISOString().split('T')[0]; // Apenas a parte da data
+  const tomorrowISO = tomorrow.toISOString().split('T')[0]; 
 
-  // --- INÍCIO DA MUDANÇA ---
-  // Calcular "mês que vem" para os exemplos
   const nextMonthDate = new Date(now);
   nextMonthDate.setMonth(now.getMonth() + 1);
   
   const nextMonthYear = nextMonthDate.getFullYear();
   const nextMonthNumber = String(nextMonthDate.getMonth() + 1).padStart(2, '0');
   // A data exata para o exemplo será dia 15 do próximo mês, às 09:00 UTC.
+
   const nextMonthExampleISO = `${nextMonthYear}-${nextMonthNumber}-15T09:00:00.000Z`;
 
   const systemPrompt = `
@@ -136,9 +126,9 @@ export async function interpretDriverMessage(message, currentDate) {
          "amount": number,
          "description": "string",
          "category": "string",
-         "source": "string", // Apenas para income
-         "tax": number, // Opcional para income
-         "distance": number, // Opcional para income
+         "source": "string", 
+         "tax": number, 
+         "distance": number, 
          "messageId": "string",
          "days": number,
          "month": "string (YYYY-MM)",
@@ -192,7 +182,6 @@ export async function interpretDriverMessage(message, currentDate) {
   - User: "ver detalhes"
     Response: { "intent": "get_transaction_details", "data": {} }  
 
-  // --- Exemplos de Lembretes (com data e hora) ---
   - User: "lembrete pagar o seguro do carro dia 15 deste mês"
     Response: { "intent": "add_reminder", "data": { "description": "pagar o seguro do carro", "date": "${currentYear}-${currentMonth}-15T09:00:00.000Z", "type": "Pagamento" } }
   - User: "me lembre de pagar a manutenção do carro dia 15 do mês que vem"
@@ -202,7 +191,6 @@ export async function interpretDriverMessage(message, currentDate) {
   - User: "Me lembre de testar o aplicativo hoje"
     Response: { "intent": "add_reminder", "data": { "description": "testar o aplicativo", "date": "${now.toISOString().split('T')[0]}T09:00:00.000Z", "type": "Outro" } }
 
-  // Para apagar GASTOS ou GANHOS
   - User: "remover #a4b8c"
     Response: { "intent": "delete_transaction", "data": { "messageId": "a4b8c" } }
   - User: "apagar o gasto #d9e2f"
@@ -210,7 +198,6 @@ export async function interpretDriverMessage(message, currentDate) {
   - User: "excluir receita #f1g3h"
     Response: { "intent": "delete_transaction", "data": { "messageId": "f1g3h" } }
 
-  // Para apagar LEMBRETES
   - User: "remover lembrete #a4b08"
     Response: { "intent": "delete_reminder", "data": { "messageId": "a4b08" } }
   - User: "apagar o lembrete #265dd"
@@ -218,7 +205,6 @@ export async function interpretDriverMessage(message, currentDate) {
   - User: "excluir lembrete #b3988"
     Response: { "intent": "delete_reminder", "data": { "messageId": "b3988" } }
 
-  // --- Exemplos de Comandos Gerais ---
   - User: "quero cadastrar meu veiculo"
     Response: { "intent": "register_vehicle", "data": {} }
   - User: "quais meus lembretes?"
