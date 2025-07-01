@@ -1,4 +1,6 @@
 import { sendOrLogMessage } from "../helpers/responseHelper.js";
+import { fromZonedTime } from "date-fns-tz";
+import { TIMEZONE } from "../utils/dateUtils.js";
 
 import express from "express";
 import twilio from "twilio";
@@ -262,6 +264,12 @@ router.post("/", async (req, res) => {
             }
           }
           break;
+        default:
+          sendOrLogMessage(
+            twiml,
+            "Hmm, não entendi sua resposta. Você está no meio do cadastro do veículo. Digite 'cancelar' para sair ou responda à última pergunta."
+          );
+          break;
       }
       res.writeHead(200, { "Content-Type": "text/xml" });
       return res.end(twiml.toString());
@@ -371,30 +379,37 @@ router.post("/", async (req, res) => {
       case "generate_profit_chart": {
         const { days = 7 } = interpretation.data;
 
-        twiml.message(`📈 Certo! Preparando seu gráfico de lucratividade dos últimos ${days} dias...`);
-        
+        sendOrLogMessage(
+          twiml,
+          `📈 Certo! Preparando seu gráfico de lucratividade dos últimos ${days} dias...`
+        );
+
         try {
           devLog(`Buscando dados para o gráfico dos últimos ${days} dias...`);
           const reportData = await getProfitReportData(userId, days);
 
           if (reportData.length === 0) {
-            twiml.message(`📉 Não encontrei nenhuma transação nos últimos ${days} dias para gerar o gráfico.`);
-            break; 
+            sendOrLogMessage(
+              twiml,
+              `📉 Não encontrei nenhuma transação nos últimos ${days} dias para gerar o gráfico.`
+            );
+            break;
           }
-          
+
           devLog("Gerando a imagem do gráfico...");
           const imageUrl = await generateProfitChart(reportData, userId);
           devLog(`Enviando imagem do gráfico: ${imageUrl}`);
           await sendReportImage(userId, imageUrl);
-
         } catch (error) {
           devLog("❌ Erro ao gerar o gráfico de lucratividade:", error);
-          twiml.message("❌ Desculpe, ocorreu um erro ao tentar gerar seu gráfico. Tente novamente mais tarde.");
+          sendOrLogMessage(
+            twiml,
+            "❌ Desculpe, ocorreu um erro ao tentar gerar seu gráfico. Tente novamente mais tarde."
+          );
         }
-        
+
         break;
       }
-
       case "get_summary": {
         let { month, monthName } = interpretation.data;
 
@@ -412,7 +427,7 @@ router.post("/", async (req, res) => {
         devLog(`Calculando resumo de LUCRO para: Mês=${month}`);
         const summaryMessage = await getPeriodSummary(userId, month, monthName);
 
-        twiml.message(summaryMessage);
+        twiml.message( summaryMessage);
         break;
       }
       case "get_expenses_by_category": {
@@ -436,7 +451,8 @@ router.post("/", async (req, res) => {
         );
         const expenses = await getExpensesByCategory(userId, month, category);
         if (expenses.length === 0) {
-          twiml.message(
+          sendOrLogMessage(
+            twiml,
             `Você não tem nenhum gasto registrado em *${monthName}* ${
               category ? `na categoria *${category}*` : ""
             }.`
@@ -463,7 +479,7 @@ router.post("/", async (req, res) => {
           monthName,
           category,
         };
-        twiml.message(message);
+        twiml.message( message);
         break;
       }
       case "get_incomes_by_source": {
@@ -488,7 +504,8 @@ router.post("/", async (req, res) => {
         const incomes = await getIncomesBySource(userId, month, source);
 
         if (incomes.length === 0) {
-          twiml.message(
+          sendOrLogMessage(
+            twiml,
             `Você não tem nenhuma receita registrada em *${monthName}* ${
               source ? `da plataforma *${source}*` : ""
             }.`
@@ -516,7 +533,7 @@ router.post("/", async (req, res) => {
           monthName,
           source,
         };
-        twiml.message(message);
+        twiml.message( message);
         break;
       }
       case "get_transaction_details": {
@@ -524,7 +541,8 @@ router.post("/", async (req, res) => {
         const previousData = conversationState[userId];
 
         if (!previousData || !previousData.month) {
-          twiml.message(
+          sendOrLogMessage(
+            twiml,
             "Não há um relatório recente para detalhar. Peça um resumo de gastos ou ganhos primeiro."
           );
           break;
@@ -535,7 +553,8 @@ router.post("/", async (req, res) => {
         }
 
         if (!type) {
-          twiml.message(
+          sendOrLogMessage(
+            twiml,
             'Por favor, especifique o que deseja detalhar. Ex: "detalhes gastos" ou "detalhes receitas".'
           );
           break;
@@ -549,47 +568,40 @@ router.post("/", async (req, res) => {
             ? await getIncomeDetails(userId, month, monthName, source)
             : await getExpenseDetails(userId, month, monthName, category);
 
-        twiml.message(detailsMessage);
+        twiml.message( detailsMessage);
         delete conversationState[userId];
         break;
       }
-
       case "greeting": {
         sendGreetingMessage(twiml);
         break;
       }
       case "add_reminder": {
-        const { description, date } = interpretation.data;
-        const TIMEZONE = "America/Sao_Paulo"; // Define o fuso horário de referência
+        const { description, date, type } = interpretation.data;
 
         if (!date) {
-          twiml.message(
-            "⏰ Por favor, forneça uma data e hora futuras válidas. Ex: 'Lembrar de ligar para o dentista amanhã às 14h'."
-          );
+          twiml.message( "⏰ Por favor, forneça uma data e hora futuras válidas. Ex: 'Lembrar de ligar para o dentista amanhã às 14h'.");
           break;
         }
-
-        // Converte a data/hora recebida da IA (que já está em UTC) para um objeto Date.
+        
         const dateToSave = new Date(date);
-
-        // Verifica se a data está no futuro.
-        if (!(dateToSave > new Date())) {
-          twiml.message(
-            "⏰ Ops, essa data já passou! Por favor, forneça uma data e hora futuras."
-          );
+        
+        // A verificação de data futura permanece a mesma.
+        if (dateToSave.getTime() <= Date.now()) {
+          twiml.message( "⏰ Ops, esse horário já passou! Por favor, forneça uma data e hora futuras.");
           break;
         }
 
         const newReminder = new Reminder({
-          userId, // Usando nosso userId string
+          userId,
           description: description,
-          date: dateToSave,
+          date: dateToSave, // Salva a data UTC diretamente.
+          type: type || 'Outro',
           messageId: generateId(),
         });
 
         await newReminder.save();
-        // A função sendReminderMessage já existe e funcionará bem aqui.
-        await sendReminderMessage(twiml, messageToProcess, newReminder);
+        await sendReminderMessage(twiml, newReminder);
         break;
       }
       case "delete_reminder": {
@@ -602,7 +614,8 @@ router.post("/", async (req, res) => {
         if (reminder) {
           sendReminderDeletedMessage(twiml, reminder);
         } else {
-          twiml.message(
+          sendOrLogMessage(
+            twiml,
             `🚫 Nenhum lembrete com o ID _#${messageId}_ foi encontrado.`
           );
         }

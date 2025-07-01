@@ -14,6 +14,12 @@ const reminderSchema = new mongoose.Schema({
         type: Date,
         required: true
     },
+    type: {
+        type: String,
+        required: true,
+        enum: ['Pagamento', 'Manutenção', 'Documento', 'Outro'],
+        default: 'Outro'
+    },
     messageId: {
         type: String,
         required: true,

@@ -125,7 +125,7 @@ export async function interpretDriverMessage(message, currentDate) {
 
   4. EXTRAIA DADOS PARA "add_reminder":
      - description: O que é o lembrete.
-     - reminderDate: A data E HORA futuras no formato ISO 8601 (YYYY-MM-DDTHH:mm:ss.sssZ). A data de hoje é ${currentDate}. Interprete "amanhã às 14h", "hoje às 19:30", etc. Se a hora não for especificada, use 09:00 como padrão.
+     - date: A data E HORA futuras no formato ISO 8601 (YYYY-MM-DDTHH:mm:ss.sssZ). A data de hoje é ${currentDate}. Resolva datas relativas como "amanhã às 15h" ou "dia 15" usando este contexto. Se a hora não for especificada, use 09:00 como padrão. A resposta DEVE estar em formato ISO 8601 completo.
      - type: CLASSIFIQUE OBRIGATORIAMENTE em um dos seguintes: ['Pagamento', 'Manutenção', 'Documento', 'Outro'].
 
   5. FORMATO DA RESPOSTA:
@@ -143,8 +143,8 @@ export async function interpretDriverMessage(message, currentDate) {
          "days": number,
          "month": "string (YYYY-MM)",
          "monthName": "string",
-         "reminderDate": "string (ISO 8601)",
-         "type": "string" // Apenas para reminder
+         "date": "string (ISO 8601)",
+         "type": "string"
        }
      }
 
@@ -194,17 +194,33 @@ export async function interpretDriverMessage(message, currentDate) {
 
   // --- Exemplos de Lembretes (com data e hora) ---
   - User: "lembrete pagar o seguro do carro dia 15 deste mês"
-    Response: { "intent": "add_reminder", "data": { "description": "pagar o seguro do carro", "date": "${currentYear}-${currentMonth}-15T09:00:00.000Z" } }
+    Response: { "intent": "add_reminder", "data": { "description": "pagar o seguro do carro", "date": "${currentYear}-${currentMonth}-15T09:00:00.000Z", "type": "Pagamento" } }
   - User: "me lembre de pagar a manutenção do carro dia 15 do mês que vem"
     Response: { "intent": "add_reminder", "data": { "description": "pagar a manutenção do carro", "date": "${nextMonthExampleISO}", "type": "Manutenção" } }
   - User: "lembrete trocar o óleo amanhã às 15h"
-    Response: { "intent": "add_reminder", "data": { "description": "trocar o óleo", "date": "${tomorrowISO.replace('T00:00:00.000Z', 'T15:00:00.000Z')}" } }
+    Response: { "intent": "add_reminder", "data": { "description": "trocar o óleo", "date": "${tomorrow.toISOString().replace(/T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, 'T15:00:00.000Z')}", "type": "Manutenção" } }
+  - User: "Me lembre de testar o aplicativo hoje"
+    Response: { "intent": "add_reminder", "data": { "description": "testar o aplicativo", "date": "${now.toISOString().split('T')[0]}T09:00:00.000Z", "type": "Outro" } }
+
+  // Para apagar GASTOS ou GANHOS
+  - User: "remover #a4b8c"
+    Response: { "intent": "delete_transaction", "data": { "messageId": "a4b8c" } }
+  - User: "apagar o gasto #d9e2f"
+    Response: { "intent": "delete_transaction", "data": { "messageId": "d9e2f" } }
+  - User: "excluir receita #f1g3h"
+    Response: { "intent": "delete_transaction", "data": { "messageId": "f1g3h" } }
+
+  // Para apagar LEMBRETES
+  - User: "remover lembrete #a4b08"
+    Response: { "intent": "delete_reminder", "data": { "messageId": "a4b08" } }
+  - User: "apagar o lembrete #265dd"
+    Response: { "intent": "delete_reminder", "data": { "messageId": "265dd" } }
+  - User: "excluir lembrete #b3988"
+    Response: { "intent": "delete_reminder", "data": { "messageId": "b3988" } }
 
   // --- Exemplos de Comandos Gerais ---
   - User: "quero cadastrar meu veiculo"
     Response: { "intent": "register_vehicle", "data": {} }
-  - User: "remover #a4b8c"
-    Response: { "intent": "delete_transaction", "data": { "messageId": "a4b8c" } }
   - User: "quais meus lembretes?"
     Response: { "intent": "list_reminders", "data": {} }
   - User: "Olá"

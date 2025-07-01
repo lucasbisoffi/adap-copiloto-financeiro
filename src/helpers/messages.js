@@ -7,9 +7,10 @@ const openai = new OpenAI({
 export function sendGreetingMessage(twiml) {
   sendHelpMessage(twiml);
 }
-
 export function sendHelpMessage(twiml) {
-  twiml.message(`👋 Olá! Sou o *ADAP, seu Copiloto Financeiro*.
+  sendOrLogMessage(
+    twiml,
+    `👋 Olá! Sou o *ADAP, seu Copiloto Financeiro*.
 
 Estou aqui para te ajudar a saber se suas corridas estão dando lucro de verdade, de um jeito fácil e direto no WhatsApp.
 
@@ -34,9 +35,9 @@ Estou aqui para te ajudar a saber se suas corridas estão dando lucro de verdade
    - "lembrar de pagar o seguro dia 20"
    - "lembrete trocar o óleo daqui 3 meses"
 
-É só me mandar uma mensagem que eu anoto tudo na hora! Vamos acelerar seu controle financeiro! 🚗💨`);
+É só me mandar uma mensagem que eu anoto tudo na hora! Vamos acelerar seu controle financeiro! 🚗💨`
+  );
 }
-
 export function sendIncomeAddedMessage(twiml, incomeData) {
   let sourceText =
     incomeData.source !== "Outros" ? ` da ${incomeData.source}` : "";
@@ -66,11 +67,11 @@ export function sendIncomeAddedMessage(twiml, incomeData) {
 
   message += `\n\n🆔 #${incomeData.messageId}`;
 
-  twiml.message(message);
+  twiml.message( message);
 }
-
 export function sendExpenseAddedMessage(twiml, expenseData) {
-  twiml.message(
+  sendOrLogMessage(
+    twiml,
     `💸 *Gasto anotado!*
 📌 ${
       expenseData.description.charAt(0).toUpperCase() +
@@ -80,51 +81,52 @@ export function sendExpenseAddedMessage(twiml, expenseData) {
 🆔 #${expenseData.messageId}`
   );
 }
-
 export function sendIncomeDeletedMessage(twiml, incomeData) {
-  twiml.message(`🗑️ Ganho _#${incomeData.messageId}_ removido.`);
+  twiml.message( `🗑️ Ganho _#${incomeData.messageId}_ removido.`);
 }
-
 export function sendExpenseDeletedMessage(twiml, expenseData) {
-  twiml.message(`🗑️ Gasto _#${expenseData.messageId}_ removido.`);
+  twiml.message( `🗑️ Gasto _#${expenseData.messageId}_ removido.`);
 }
-
-export async function sendReminderMessage(twiml, message, reminderData) {
+export async function sendReminderMessage(twiml, reminderData) {
   const typeEmoji = {
     Pagamento: "💳",
     Manutenção: "🔧",
     Documento: "📄",
     Outro: "🗓️",
   };
-  const dateObj = new Date(reminderData.reminderDate);
-  const formattedDate = dateObj.toLocaleDateString("pt-BR", {
-    timeZone: "UTC",
-  });
+
+  // MUDANÇA: Usando 'reminderData.date' que é o nome correto do campo no nosso modelo.
+  const dateObj = new Date(reminderData.date);
+
+  // Usando a formatação do ADAP normal para exibir data e hora.
+  const formattedDateTime = new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
+  }).format(dateObj);
 
   twiml.message(
-    `*Lembrete agendado!* ✅
-${typeEmoji[reminderData.type] || "🗓️"} *${reminderData.type}:* ${
-      reminderData.description
-    }
-📅 *Data:* ${formattedDate}
-🆔 #${reminderData.messageId}`
+    `*Lembrete agendado!* ✅\n` +
+      `${typeEmoji[reminderData.type] || "🗓️"} *${reminderData.type}:* ${
+        reminderData.description
+      }\n` +
+      `📅 *Data:* ${formattedDateTime}\n` +
+      `🆔 #${reminderData.messageId}`
   );
 }
-
 export function sendReminderDeletedMessage(twiml, reminderData) {
-  twiml.message(`🗑️ Lembrete _#${reminderData.messageId}_ removido.`);
+  twiml.message( `🗑️ Lembrete _#${reminderData.messageId}_ removido.`);
 }
-
 export function sendTotalRemindersMessage(twiml, allFutureReminders) {
   if (!allFutureReminders || allFutureReminders.length === 0) {
-    twiml.message("Você não tem nenhum lembrete futuro agendado. 👍");
+    twiml.message( "Você não tem nenhum lembrete futuro agendado. 👍");
     return;
   }
-  twiml.message(
+  sendOrLogMessage(
+    twiml,
     `Aqui estão seus próximos lembretes:\n\n${allFutureReminders}\n\nPara apagar um, digite "apagar lembrete #id".`
   );
 }
-
 export async function sendFinancialHelpMessage(twiml, message) {
   const prompt = `Você é o ADAP, um co-piloto financeiro. Responda à seguinte pergunta de um motorista de aplicativo de forma clara, direta e útil, em português do Brasil: "${message}"`;
   const response = await openai.chat.completions.create({
@@ -132,5 +134,5 @@ export async function sendFinancialHelpMessage(twiml, message) {
     messages: [{ role: "system", content: prompt }],
     max_tokens: 300,
   });
-  twiml.message(response.choices[0].message.content);
+  twiml.message( response.choices[0].message.content);
 }
