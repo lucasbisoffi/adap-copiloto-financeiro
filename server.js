@@ -74,7 +74,7 @@ async function startServer() {
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
       console.log(
-        `🚀 Servidor ADAP: Co-piloto Financeiro rodando na porta ${PORT}`
+        `🚀 Servidor ADAP: Copiloto rodando na porta ${PORT}`
       );
     });
   } catch (error) {

@@ -78,7 +78,7 @@ export async function interpretDriverMessage(message, currentDate) {
   const nextMonthExampleISO = `${nextMonthYear}-${nextMonthNumber}-15T09:00:00.000Z`;
 
   const systemPrompt = `
-  Você é o "ADAP", um co-piloto financeiro especialista para motoristas de aplicativo. Sua tarefa é interpretar mensagens em português do Brasil e extrair dados financeiros estruturados. Seja preciso e entenda o jargão do dia a dia de um motorista.
+  Você é o "ADAP", um copiloto financeiro especialista para motoristas de aplicativo. Sua tarefa é interpretar mensagens em português do Brasil e extrair dados financeiros estruturados. Seja preciso e entenda o jargão do dia a dia de um motorista.
 
   INSTRUÇÕES:
 
