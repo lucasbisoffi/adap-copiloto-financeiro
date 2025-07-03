@@ -7,12 +7,12 @@ import matplotlib.ticker as mticker
 import cloudinary
 import cloudinary.uploader
 
-# Função para imprimir mensagens de erro no stderr e sair.
+# Função para imprimir mensagens de erro no stderr e sair (sem alterações).
 def fail(message):
     print(f"ERROR: {message}", file=sys.stderr)
     sys.exit(1)
 
-# Configuração do Cloudinary
+# Configuração do Cloudinary (sem alterações).
 try:
     cloudinary.config(
         cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
@@ -24,65 +24,86 @@ try:
 except Exception as e:
     fail(f"Erro na configuracao do Cloudinary: {e}")
 
+# ==============================================================================
+# FUNÇÃO DO GRÁFICO TOTALMENTE MELHORADA
+# ==============================================================================
 def create_profit_chart(data, image_path):
     """
-    Gera um gráfico de barras comparando ganhos e gastos diários.
+    Gera um gráfico de linhas aprimorado, comparando ganhos, gastos e lucro líquido diários.
     """
     if not data:
         fail("Dados vazios recebidos. Nao e possivel gerar o grafico.")
         return
 
+    # 1. Preparação robusta dos dados com Pandas
     df = pd.DataFrame(data)
+    df['date'] = pd.to_datetime(df['date'])
+    df.set_index('date', inplace=True)
 
+    # Garante que as colunas 'income' e 'expense' existam, preenchendo com 0 se não existirem.
     if 'income' not in df.columns:
         df['income'] = 0
     if 'expense' not in df.columns:
         df['expense'] = 0
-    df.fillna(0, inplace=True) 
+    df.fillna(0, inplace=True)
 
-    df['date'] = pd.to_datetime(df['date'])
-    df.sort_values('date', inplace=True)
-    df['formatted_date'] = df['date'].dt.strftime('%d/%m')
+    # Cria um range com todos os dias do período para não haver "buracos" no gráfico
+    full_date_range = pd.date_range(start=df.index.min(), end=df.index.max(), freq='D')
+    df = df.reindex(full_date_range, fill_value=0)
+    
+    # Calcula a coluna mais importante: o lucro líquido
+    df['profit'] = df['income'] - df['expense']
+    df['formatted_date'] = df.index.strftime('%d/%m')
 
+    # 2. Criação do Gráfico com Estilo Aprimorado
     plt.style.use('seaborn-v0_8-whitegrid')
     fig, ax = plt.subplots(figsize=(12, 7))
 
-    bar_width = 0.4
-    index = range(len(df)) # Usar range para evitar problemas com index do pandas
+    # Plotando Ganhos e Gastos como linhas
+    ax.plot(df.index, df['income'], label='Ganhos', color='#2ecc71', marker='o', linestyle='-', linewidth=2.5)
+    ax.plot(df.index, df['expense'], label='Gastos', color='#e74c3c', marker='o', linestyle='-', linewidth=2.5)
 
-    bars_income = ax.bar([i - bar_width/2 for i in index], df['income'], bar_width, label='Ganhos', color='#4CAF50', edgecolor='black')
-    bars_expense = ax.bar([i + bar_width/2 for i in index], df['expense'], bar_width, label='Gastos', color='#F44336', edgecolor='black')
+    # 3. Visualização do Lucro Líquido (a grande melhoria!)
+    # Preenche a área de lucro em verde e a de prejuízo em vermelho
+    ax.fill_between(df.index, df['profit'], where=df['profit'] >= 0, facecolor='#2ecc71', alpha=0.3, interpolate=True, label='Lucro')
+    ax.fill_between(df.index, df['profit'], where=df['profit'] < 0, facecolor='#e74c3c', alpha=0.3, interpolate=True, label='Prejuízo')
 
-    ax.set_title('Resumo de Ganhos vs. Gastos Diários', fontsize=16, fontweight='bold', pad=20)
-    ax.set_ylabel('Valor (R$)', fontsize=12)
-    ax.set_xlabel('Data', fontsize=12)
+    # Adiciona uma linha de referência em zero
+    ax.axhline(0, color='grey', linestyle='--', linewidth=1)
 
+    # 4. Melhorias na Formatação e Estética
+    ax.set_title('Resumo de Ganhos, Gastos e Lucro Diário', fontsize=18, fontweight='bold', pad=20)
+    ax.set_ylabel('Valor (R$)', fontsize=14)
+    ax.set_xlabel('Data', fontsize=14)
+    
+    # Formata o eixo Y para mostrar a moeda corretamente
     formatter = mticker.FormatStrFormatter('R$ %.2f')
     ax.yaxis.set_major_formatter(formatter)
-    
-    ax.set_xticks(index)
-    ax.set_xticklabels(df['formatted_date'], rotation=45, ha="right")
 
-    ax.legend()
+    # Ajusta os ticks do eixo X para mostrar as datas formatadas
+    ax.set_xticks(df.index)
+    ax.set_xticklabels(df['formatted_date'], rotation=30, ha="right")
+    
+    # Organiza a legenda
+    handles, labels = ax.get_legend_handles_labels()
+    # Ordem desejada: Ganhos, Gastos, Lucro, Prejuízo
+    order = [labels.index('Ganhos'), labels.index('Gastos'), labels.index('Lucro'), labels.index('Prejuízo')]
+    ax.legend([handles[idx] for idx in order], [labels[idx] for idx in order], fontsize=12)
+
     fig.tight_layout()
-    plt.savefig(image_path, dpi=100)
+    plt.savefig(image_path, dpi=100, bbox_inches='tight')
     plt.close()
-    
-    # MUDANÇA: A mensagem de status foi removida. O Node.js já loga o progresso.
-    # print(f"Grafico salvo em: {image_path}", file=sys.stderr) <-- Removido
 
+# Função de upload para o Cloudinary (sem alterações).
 def upload_to_cloudinary(image_path):
-    """
-    Faz o upload da imagem para o Cloudinary e retorna a URL segura.
-    """
     try:
         upload_response = cloudinary.uploader.upload(image_path, folder="adap_reports")
         return upload_response.get('secure_url')
     except Exception as e:
-        # Erro de upload é um erro real, então usamos fail().
         fail(f"Erro no upload para Cloudinary: {e}")
         return None
 
+# Bloco principal de execução (sem alterações na lógica, apenas nos comentários).
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         fail("Uso incorreto. Esperado: python generate_profit_chart.py <json_in> <image_out>")
@@ -99,10 +120,9 @@ if __name__ == "__main__":
         image_url = upload_to_cloudinary(image_path)
 
         if image_url:
-            # MUDANÇA: A única coisa impressa no stdout em caso de sucesso é a URL.
+            # A única saída em caso de sucesso é a URL da imagem.
             print(image_url)
         else:
-            # Se a URL não for retornada, consideramos uma falha.
             fail("Nao foi possivel obter a URL da imagem apos o upload.")
 
     except FileNotFoundError:
@@ -112,7 +132,7 @@ if __name__ == "__main__":
     except Exception as e:
         fail(f"Um erro inesperado ocorreu: {e}")
     finally:
-        # Limpeza de arquivos temporários
+        # Limpeza dos arquivos temporários.
         if os.path.exists(json_path):
             os.remove(json_path)
         if os.path.exists(image_path):

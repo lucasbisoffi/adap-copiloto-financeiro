@@ -114,13 +114,13 @@ export async function interpretDriverMessage(message, currentDate) {
         - 'Outros': Se nenhuma outra categoria se encaixar perfeitamente.
 
     2b. "add_income":
-      - amount: O valor BRUTO do ganho.
+      - amount: O valor LÍQUIDO que o motorista recebeu. Este é o valor principal a ser extraído.
       - description: A descrição do ganho.
       - category: CLASSIFIQUE OBRIGATORIAMENTE em uma das seguintes: ['Corrida', 'Gorjeta', 'Bônus'].
-      - source: IDENTIFIQUE A PLATAFORMA. Deve ser uma das seguintes: ['Uber', '99', 'InDrive', 'Outros']. Se não for especificado, use 'Outros'.
-      - (Opcional) tax: Se o usuário mencionar a taxa do app (ex: "R$50 com taxa de R$10"), extraia o valor da taxa.
-      - (Opcional) distance: Se o usuário mencionar a quilometragem (ex: "corrida de 15km"), extraia o número.
-
+      - source: IDENTIFIQUE A PLATAFORMA da corrida. Deve ser uma das seguintes: ['Uber', '99', 'InDrive', 'Outros']. Se não for especificado, use 'Outros'.
+      - distance: (Obrigatório) A quilometragem (KM) da corrida. Você DEVE extrair este valor.
+      - (Opcional) tax: A taxa do aplicativo, APENAS SE o motorista mencionar explicitamente. Este valor é informativo e não deve ser subtraído do 'amount'.
+      
     2c. EXTRAIA DADOS PARA "add_reminder":
       - extraia 'description', 'date' e 'type'.
       - O 'type' DEVE ser uma das categorias de gasto ou ganho que você já conhece (ex: 'Pagamento', 'Manutenção', 'Limpeza', 'Combustível', etc.). Se não se encaixar, use 'Outros'.
@@ -156,12 +156,12 @@ export async function interpretDriverMessage(message, currentDate) {
   - User: "paguei 350 no aluguel do carro"
     Response: { "intent": "add_expense", "data": { "amount": 350, "description": "aluguel do carro", "category": "Aluguel do Veículo" } }  
 
-  - User: "ganhei 55 numa corrida da uber"
-    Response: { "intent": "add_income", "data": { "amount": 55, "description": "corrida", "category": "Corrida", "source": "Uber" } }
+  - User: "ganhei 55 numa corrida da uber de 20km"
+    Response: { "intent": "add_income", "data": { "amount": 55, "description": "corrida", "category": "Corrida", "source": "Uber", "distance": 20 } }
   - User: "corrida de 35 na 99, foram 10km com taxa de 12"
     Response: { "intent": "add_income", "data": { "amount": 35, "description": "corrida de 10km", "category": "Corrida", "source": "99", "tax": 12, "distance": 10 } }
-  - User: "99 pagou 30 reais"
-    Response: { "intent": "add_income", "data": { "amount": 30, "description": "pagamento", "category": "Corrida", "source": "99" } }
+  - User: "99 pagou 30 reais por 8km"
+    Response: { "intent": "add_income", "data": { "amount": 30, "description": "pagamento", "category": "Corrida", "source": "99", "distance": 8 } }
 
   - User: "resumo do mês"
     Response: { "intent": "get_summary", "data": { "month": "${currentYear}-${currentMonth}", "monthName": "${monthName}" } }

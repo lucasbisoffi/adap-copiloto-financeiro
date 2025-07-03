@@ -189,81 +189,92 @@ export async function getExpensesByCategory(userId, month, category = null) {
   ]);
 }
 
-export async function getIncomesBySource(userId, month, source = null) {
-  const [year, monthNumber] = month.split("-");
-  const matchStage = {
+export async function getIncomesBySource(userId, month, source) {
+  const [year, monthNum] = month.split("-").map(Number);
+  const startDate = new Date(year, monthNum - 1, 1);
+  const endDate = new Date(year, monthNum, 0, 23, 59, 59);
+
+  const matchConditions = {
     userId,
-    date: {
-      $gte: new Date(Date.UTC(parseInt(year), parseInt(monthNumber) - 1, 1)),
-      $lte: new Date(
-        Date.UTC(parseInt(year), parseInt(monthNumber), 0, 23, 59, 59)
-      ),
-    },
+    date: { $gte: startDate, $lte: endDate },
+    category: "Corrida", // Focamos apenas em corridas para essa análise
   };
 
-  // Se uma fonte específica for fornecida, adicionamos ao filtro.
   if (source) {
-    matchStage.source = source;
+    matchConditions.source = source;
   }
 
-  // Se a consulta for para uma fonte específica, agrupamos por descrição.
-  // Se for geral, agrupamos por fonte.
-  const groupStage = {
-    _id: source ? "$description" : "$source",
-    total: { $sum: "$amount" },
-  };
-
-  return await Income.aggregate([
-    { $match: matchStage },
-    { $group: groupStage },
-    { $sort: { total: -1 } },
+  const incomes = await Income.aggregate([
+    { $match: matchConditions },
+    {
+      $group: {
+        _id: "$source", // Agrupa por plataforma (Uber, 99, etc)
+        total: { $sum: "$amount" }, // Soma o valor das corridas (já existia)
+        count: { $sum: 1 }, // NOVO: Conta o número de corridas
+        totalDistance: { $sum: "$distance" }, // NOVO: Soma a quilometragem
+      },
+    },
+    { $sort: { total: -1 } }, // Ordena da mais rentável para a menos
   ]);
+
+  return incomes;
 }
 
-export async function getIncomeDetails(userId, month, monthName, source = null) {
-  let matchStage = { userId };
-  const [year, monthNumber] = month.split("-");
-  matchStage.date = {
-    $gte: new Date(Date.UTC(parseInt(year), parseInt(monthNumber) - 1, 1)),
-    $lte: new Date(
-      Date.UTC(parseInt(year), parseInt(monthNumber), 0, 23, 59, 59)
-    ),
+export async function getIncomeDetails(userId, month, monthName, source) {
+  const [year, monthNum] = month.split("-").map(Number);
+  const startDate = new Date(year, monthNum - 1, 1);
+  const endDate = new Date(year, monthNum, 0, 23, 59, 59);
+
+  const matchConditions = {
+    userId,
+    date: { $gte: startDate, $lte: endDate },
   };
 
-  // Adiciona o filtro de fonte, se fornecido.
   if (source) {
-    matchStage.source = source;
+    matchConditions.source = source;
   }
 
-  const incomes = await Income.find(matchStage).sort({ source: 1, date: 1 });
-  if (incomes.length === 0)
-    return `Nenhum ganho encontrado em *${monthName}* ${
-      source ? `da plataforma *${source}*` : ""
-    }.`;
+  const incomes = await Income.find(matchConditions).sort({ date: 1 });
 
-  let message = `🧾 *Detalhes dos Ganhos em ${monthName}${
-    source ? ` (${source})` : ""
-  }*:\n\n`;
-  const incomesBySource = {};
-  incomes.forEach((income) => {
-    const groupKey = income.source || "Outros";
-    if (!incomesBySource[groupKey]) incomesBySource[groupKey] = [];
-    incomesBySource[groupKey].push(
-      `   💰 ${income.description}: *R$ ${income.amount.toFixed(2)}*`
-    );
+  if (incomes.length === 0) {
+    return `Você não tem nenhuma receita registrada em *${monthName}*.`;
+  }
+
+  let message = `🧾 *Detalhes dos Ganhos em ${monthName}*:\n\n`;
+  const groupedIncomes = {};
+
+  // Agrupa as receitas por plataforma (source)
+  incomes.forEach((inc) => {
+    if (!groupedIncomes[inc.source]) {
+      groupedIncomes[inc.source] = [];
+    }
+    groupedIncomes[inc.source].push(inc);
   });
 
-  for (const groupKey in incomesBySource) {
-    // Se a consulta já era para uma fonte específica, não precisamos repetir o título.
-    if (!source) {
-      message += `*${groupKey}*:\n`;
-    }
-    message += `${incomesBySource[groupKey].join("\n")}\n\n`;
+  // Monta a mensagem final agrupada
+  for (const sourceName in groupedIncomes) {
+    message += `*${sourceName}*:\n`;
+    groupedIncomes[sourceName].forEach((inc) => {
+      // --- A MUDANÇA ESTÁ AQUI ---
+      let details = `   💰 ${inc.description}: *R$ ${inc.amount.toFixed(2)}*`;
+      if (inc.category === "Corrida" && inc.distance) {
+        details += ` - _${inc.distance} km_`; // Adiciona a quilometragem
+      }
+      message += `${details}\n`;
+      // --- FIM DA MUDANÇA ---
+    });
+    message += `\n`;
   }
+
   return message.trim();
 }
 
-export async function getExpenseDetails(userId, month, monthName, category = null) {
+export async function getExpenseDetails(
+  userId,
+  month,
+  monthName,
+  category = null
+) {
   let matchStage = { userId };
   const [year, monthNumber] = month.split("-");
   matchStage.date = {

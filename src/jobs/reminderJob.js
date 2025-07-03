@@ -21,7 +21,7 @@ async function checkAndSendReminders() {
         devLog(`Processando lembrete para ${reminder.userId}: "${reminder.description}"`);
         
         //Verificação de Ambiente
-        if (process.env.NODE_ENV === 'production') {
+        if (process.env.NODE_ENV === 'test') {
           // Em PRODUÇÃO, envia a mensagem de verdade.
           await sendTemplatedMessage(
             reminder.userId,

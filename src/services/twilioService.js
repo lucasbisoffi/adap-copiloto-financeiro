@@ -24,7 +24,7 @@ export async function sendTemplatedMessage(to, templateName, bodyVariables) {
       from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
       to: to, // O 'to' (userId) já está no formato correto.
       // O 'contentSid' é a chave para enviar templates.
-      contentSid: process.env.TWILIO_TEMPLATE_SID,
+      contentSid: process.env.TWILIO_TEMPLATE_REMINDER,
       contentVariables: JSON.stringify(bodyVariables),
     });
     console.log(`✅ Mensagem de template '${templateName}' enviada para ${to}`);

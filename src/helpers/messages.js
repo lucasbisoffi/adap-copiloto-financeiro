@@ -1,6 +1,6 @@
 import { OpenAI } from "openai";
 import { sendOrLogMessage } from "./responseHelper.js";
-import { TIMEZONE } from '../utils/dateUtils.js';
+import { TIMEZONE } from "../utils/dateUtils.js";
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -9,70 +9,65 @@ export function sendGreetingMessage(twiml) {
   sendHelpMessage(twiml);
 }
 export function sendHelpMessage(twiml) {
-  sendOrLogMessage(
-    twiml,
+  twiml.message(
     `👋 Olá! Sou o *ADAP, seu Copiloto Financeiro*.
 
 Estou aqui para te ajudar a saber se suas corridas estão dando lucro de verdade, de um jeito fácil e direto no WhatsApp.
 
-*O QUE VOCÊ PODE FAZER:*
+1️⃣ *PRIMEIRO PASSO: CADASTRE SEU CARRO*
+Para começar, me diga: *"cadastrar meu carro"*
+Isso é essencial para futuros relatórios de desempenho!
+
+*DEPOIS, VOCÊ PODE:*
 
 ⛽ *Lançar Gastos:*
    - "150 de gasolina"
    - "45 na troca de óleo"
-   - "350 no aluguel do carro"
+   - "paguei 350 no aluguel do carro"
 
-💰 *Lançar Ganhos (por plataforma):*
-   - "ganhei 55 na uber"
-   - "99 pagou 30 reais"
-   - "10 de gorjeta"
+💰 *Lançar Ganhos (com KM):*
+   - "ganhei 55 na uber em 15km"
+   - "99 pagou 30 reais por uma corrida de 8km"
+   - "10 de gorjeta" (não precisa de km)
 
 📈 *Ver Resumos e Lucro:*
-   - "resumo da semana"
+   - "resumo da semana" (gera um gráfico 📊)
    - "lucro do mês"
-   - "quanto ganhei na 99 hoje?"
+   - "quanto ganhei na 99?"
+   - "ver meus gastos"
 
 🗓️ *Criar Lembretes:*
-   - "lembrar de pagar o seguro dia 20"
-   - "lembrete trocar o óleo daqui 3 meses"
+   - "lembrete pagar seguro dia 20 às 10h"
+   - "me lembre em 2 horas de abastecer"
 
 É só me mandar uma mensagem que eu anoto tudo na hora! Vamos acelerar seu controle financeiro! 🚗💨`
   );
 }
 export function sendIncomeAddedMessage(twiml, incomeData) {
-  let sourceText =
-    incomeData.source !== "Outros" ? ` da ${incomeData.source}` : "";
-  let message = `💰 *Ganho anotado${sourceText}!*
-📌 ${
-    incomeData.description.charAt(0).toUpperCase() +
-    incomeData.description.slice(1)
-  }
-✅ *R$ ${incomeData.amount.toFixed(2)}* (Bruto)`;
+  const { amount, description, source, distance, tax, messageId, category } = incomeData;
 
-  const distanceText = incomeData.distance
-    ? `*${incomeData.distance} km*`
-    : `_Não informado_`;
+  let message = `💰 *Ganho de R$ ${amount.toFixed(2)} anotado!*`;
 
-  const taxText = incomeData.tax
-    ? `*R$ ${incomeData.tax.toFixed(2)}*`
-    : `_Não informado_`;
-
-  message += `\n\n*Detalhes da Corrida:*
-🛣️ Distância: ${distanceText}
-💸 Taxa App: ${taxText}`;
-
-  if (incomeData.tax) {
-    const netAmount = incomeData.amount - incomeData.tax;
-    message += `\n➡️ Líquido: *R$ ${netAmount.toFixed(2)}*`;
+  message += `\n📃 *Descrição:* ${description.charAt(0).toUpperCase() + description.slice(1)}`;
+  
+  if (source && source !== 'Outros') {
+    message += `\n📱 *Plataforma:* ${source}`;
   }
 
-  message += `\n\n🆔 #${incomeData.messageId}`;
+  if (category === 'Corrida') {
+    message += `\n🛣️ *Distância:* ${distance} km`;
 
-  twiml.message( message);
+    if (tax) {
+      message += `\n💸 *Taxa App:* R$ ${tax.toFixed(2)}`;
+    }
+  }
+
+  message += `\n\n🆔 para exclusão: _#${messageId}_`;
+
+  twiml.message(message);
 }
 export function sendExpenseAddedMessage(twiml, expenseData) {
-  sendOrLogMessage(
-    twiml,
+  twiml.message(
     `💸 *Gasto anotado!*
 📌 ${
       expenseData.description.charAt(0).toUpperCase() +
@@ -99,7 +94,7 @@ export async function sendReminderMessage(twiml, reminderData) {
   const dateObj = new Date(reminderData.date);
 
   const formattedDateTime = dateObj.toLocaleString("pt-BR", {
-    timeZone: TIMEZONE, 
+    timeZone: TIMEZONE,
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -124,8 +119,7 @@ export function sendTotalRemindersMessage(twiml, allFutureReminders) {
     twiml.message( "Você não tem nenhum lembrete futuro agendado. 👍");
     return;
   }
-  sendOrLogMessage(
-    twiml,
+  twiml.message(
     `Aqui estão seus próximos lembretes:\n\n${allFutureReminders}\n\nPara apagar um, digite "apagar lembrete #id".`
   );
 }
