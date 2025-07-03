@@ -20,14 +20,20 @@ async function checkAndSendReminders() {
       try {
         devLog(`Processando lembrete para ${reminder.userId}: "${reminder.description}"`);
         
-        await sendTemplatedMessage(
-          reminder.userId,
-          process.env.TWILIO_TEMPLATE_NAME,
-          { 1: reminder.description } // A variável {{1}} do template será a descrição.
-        );
-        
-        devLog(`[ReminderJob] Lembrete #${reminder.messageId} processado com sucesso.`);
+        //Verificação de Ambiente
+        if (process.env.NODE_ENV === 'production') {
+          // Em PRODUÇÃO, envia a mensagem de verdade.
+          await sendTemplatedMessage(
+            reminder.userId,
+            process.env.TWILIO_TEMPLATE_REMINDER,
+            { 1: reminder.description } 
+          );
+        } else {
+          // Em TESTE, apenas simula o envio no console.
+          devLog(`DEV: [SIMULANDO ENVIO] Lembrete: "${reminder.description}" para ${reminder.userId}`);
+        }
 
+        devLog(`[ReminderJob] Lembrete #${reminder.messageId} processado com sucesso.`);
         await Reminder.findByIdAndDelete(reminder._id);
         devLog(`[ReminderJob] Lembrete #${reminder.messageId} excluído.`);
 
@@ -41,7 +47,7 @@ async function checkAndSendReminders() {
 }
 
 export function startReminderJob() {
-  const schedule = '* * * * *'; // Roda a cada minuto para precisão no horário.
+  const schedule = '* * * * *'; // Mantemos a cada minuto para testes e precisão de horário.
   devLog(`[Scheduler] Job de lembretes iniciado. Verificando a cada minuto.`);
   
   cron.schedule(schedule, checkAndSendReminders, {

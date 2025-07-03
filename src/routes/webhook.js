@@ -11,7 +11,7 @@ import {
   transcribeAudioWithWhisper,
 } from "../services/aiService.js";
 import { generateProfitChart } from "../services/chartService.js";
-import { sendReportImage } from "../services/twilioService.js"; 
+import { sendReportImage } from "../services/twilioService.js";
 
 import { devLog } from "../helpers/logger.js";
 import {
@@ -577,25 +577,46 @@ router.post("/", async (req, res) => {
         break;
       }
       case "add_reminder": {
-        const { description, date, type } = interpretation.data;
+        const { description, date, type, relativeMinutes } =
+          interpretation.data;
 
-        if (!date) {
-          twiml.message( "⏰ Por favor, forneça uma data e hora futuras válidas. Ex: 'Lembrar de ligar para o dentista amanhã às 14h'.");
+        if (!date && !relativeMinutes) {
+          sendOrLogMessage(
+            twiml,
+            "⏰ Por favor, forneça uma data e hora futuras válidas..."
+          );
           break;
         }
-        
-        const dateToSave = new Date(date);
-        
+
+        let dateToSave;
+        if (relativeMinutes) {
+          const now = new Date();
+          now.setMinutes(now.getMinutes() + relativeMinutes);
+          dateToSave = now;
+          devLog(
+            `[add_reminder] Data calculada a partir de tempo relativo: ${dateToSave.toISOString()}`
+          );
+        } else {
+          const localDateString = date.slice(0, 19);
+          dateToSave = fromZonedTime(localDateString, TIMEZONE);
+          devLog(
+            `[add_reminder] Data absoluta convertida para UTC: ${dateToSave.toISOString()}`
+          );
+        }
+
         if (dateToSave.getTime() <= Date.now()) {
-          twiml.message( "⏰ Ops, esse horário já passou! Por favor, forneça uma data e hora futuras.");
+          sendOrLogMessage(
+            twiml,
+            "⏰ Ops, esse horário já passou! Por favor, forneça uma data e hora futuras."
+          );
           break;
         }
 
         const newReminder = new Reminder({
           userId,
-          description: description,
-          date: dateToSave, 
-          type: type || 'Outro',
+          description,
+          date: dateToSave,
+          type: type || "Outro",
           messageId: generateId(),
         });
 
@@ -605,10 +626,7 @@ router.post("/", async (req, res) => {
       }
       case "delete_reminder": {
         const { messageId } = interpretation.data;
-        const reminder = await Reminder.findOneAndDelete({
-          userId,
-          messageId,
-        });
+        const reminder = await Reminder.findOneAndDelete({ userId, messageId });
         if (reminder) {
           sendReminderDeletedMessage(twiml, reminder);
         } else {

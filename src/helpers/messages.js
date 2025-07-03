@@ -1,5 +1,6 @@
 import { OpenAI } from "openai";
 import { sendOrLogMessage } from "./responseHelper.js";
+import { TIMEZONE } from '../utils/dateUtils.js';
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -95,15 +96,16 @@ export async function sendReminderMessage(twiml, reminderData) {
     Outro: "🗓️",
   };
 
-  // MUDANÇA: Usando 'reminderData.date' que é o nome correto do campo no nosso modelo.
   const dateObj = new Date(reminderData.date);
 
-  // Usando a formatação do ADAP normal para exibir data e hora.
-  const formattedDateTime = new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-    timeZone: "America/Sao_Paulo",
-  }).format(dateObj);
+  const formattedDateTime = dateObj.toLocaleString("pt-BR", {
+    timeZone: TIMEZONE, 
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
   twiml.message(
     `*Lembrete agendado!* ✅\n` +

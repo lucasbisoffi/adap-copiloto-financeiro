@@ -1,6 +1,5 @@
 import mongoose from "mongoose";
-
-// O "ADAP: motoristas" possui categorias pré-definidas para os motoristas
+import { INCOME_CATEGORIES } from '../utils/categories.js';
 
 const incomeSchema = new mongoose.Schema({
   userId: { type: String, required: true, index: true },
@@ -9,7 +8,7 @@ const incomeSchema = new mongoose.Schema({
   category: {
     type: String,
     required: true,
-    enum: ['Corrida', 'Gorjeta', 'Bônus']
+    enum: INCOME_CATEGORIES
   },
   // CAMPO CHAVE: De qual plataforma veio o ganho?
   source: {

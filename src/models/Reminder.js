@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { REMINDER_TYPES } from '../utils/categories.js';
 
 const reminderSchema = new mongoose.Schema({
     userId: {
@@ -17,7 +18,7 @@ const reminderSchema = new mongoose.Schema({
     type: {
         type: String,
         required: true,
-        enum: ['Pagamento', 'Manutenção', 'Documento', 'Outro'],
+        enum: REMINDER_TYPES,
         default: 'Outro'
     },
     messageId: {

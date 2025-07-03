@@ -72,53 +72,63 @@ export async function interpretDriverMessage(message, currentDate) {
 
   INSTRUÇÕES:
 
+  **CONTEXTO DE DATA ATUAL (Use para resolver datas relativas. NÃO inclua no JSON final):**
+  - Ano Atual: ${currentYear}
+  - Mês Atual: ${monthName} (${currentMonth})
+  - Dia Atual: ${now.getDate()} (${dayOfWeekName})
+
+
   1. IDENTIFIQUE A INTENÇÃO:
-     - "add_income": O usuário quer registrar um ganho (corrida, gorjeta, bônus).
-     - "add_expense": O usuário quer registrar um gasto (combustível, manutenção, etc.).
+     - "add_income": O usuário quer registrar um ganho.
+     - "add_expense": O usuário quer registrar um gasto.
      - "delete_transaction": O usuário quer apagar um registro anterior. Extraia o messageId.
-     - "generate_profit_chart": O usuário quer um resumo visual de ganhos e gastos (ex: "resumo da semana", "gráfico do mês").
-     - "get_summary": O usuário pede um resumo de lucro geral (ganhos - gastos) para um período, SEM filtros de categoria ou fonte (ex: "resumo do mês", "lucro de junho").
-     - "get_expenses_by_category": O usuário quer ver o total de gastos do mês, quebrado por categoria (ex: "gasto total", "ver meus gastos").
-     - "get_incomes_by_source": O usuário quer ver o total de ganhos do mês, quebrado por plataforma (ex: "receita total", "ver meus ganhos").
-     - "get_transaction_details": O usuário pede uma lista detalhada de transações após ver um resumo (ex: "detalhes gastos", "ver detalhes", "detalhar receitas").
-     - "add_reminder": O usuário quer criar um lembrete (ex: "lembrar de pagar o seguro dia 15", "trocar o óleo semana que vem").
+     - "generate_profit_chart": O usuário quer um resumo visual de ganhos e gastos.
+     - "get_summary": O usuário pede um resumo de lucro geral (ganhos - gastos) para um período, SEM filtros de categoria ou fonte.
+     - "get_expenses_by_category": O usuário quer ver o total de gastos do mês, quebrado por categoria.
+     - "get_incomes_by_source": O usuário quer ver o total de ganhos do mês, quebrado por plataforma.
+     - "get_transaction_details": O usuário pede uma lista detalhada de transações após ver um resumo.
+     - "add_reminder": O usuário quer criar um lembrete.
      - "delete_reminder": O usuário quer apagar um lembrete. Extraia o messageId.
      - "list_reminders": O usuário quer ver todos os lembretes pendentes.
-     - "greeting": Uma saudação simples (oi, olá, bom dia).
+     - "greeting": Uma saudação simples.
      - "instructions": O usuário pergunta como usar o bot.
      - "register_vehicle": O usuário quer cadastrar ou atualizar os dados do seu carro.
      - "unknown": A intenção não se encaixa em nenhuma das anteriores.
 
-  2. EXTRAIA DADOS PARA "add_expense":
-     - amount: O valor numérico do gasto.
-     - description: A descrição do gasto.
-     - category: CLASSIFIQUE OBRIGATORIAMENTE em uma das seguintes categorias. Use o bom senso com base na descrição.
-       - 'Combustível': "gasolina", "álcool", "etanol", "gnv", "encher o tanque".
-       - 'Manutenção': "troca de óleo", "pneu", "freio", "revisão", "mecânico".
-       - 'Limpeza': "lavagem", "higienização", "lava-rápido".
-       - 'Alimentação/Água': "almoço", "janta", "café", "lanche", "água para passageiro".
-       - 'Pedágio': "pedágio", "sem parar".
-       - 'Aluguel do Veículo': "aluguel do carro", "semanal do carro".
-       - 'Parcela do Financiamento': "parcela do carro", "financiamento".
-       - 'Seguro': "seguro do carro", "proteção veicular".
-       - 'Impostos/Taxas Anuais': "ipva", "licenciamento".
-       - 'Plano de Celular': "crédito", "plano de dados", "internet".
-       - 'Outros': Se nenhuma outra categoria se encaixar perfeitamente.
+  2. REGRAS PARA EXTRAÇÃO DE DADOS EM:
+  
+    2a. "add_expense":
+      - amount: O valor numérico do gasto.
+      - description: A descrição do gasto.
+      - category: CLASSIFIQUE OBRIGATORIAMENTE em uma das seguintes categorias. Use o bom senso com base na descrição.
+        - 'Combustível': "gasolina", "álcool", "etanol", "gnv", "encher o tanque".
+        - 'Manutenção': "troca de óleo", "pneu", "freio", "revisão", "mecânico".
+        - 'Limpeza': "lavagem", "higienização", "lava-rápido".
+        - 'Alimentação/Água': "almoço", "janta", "café", "lanche", "água para passageiro".
+        - 'Pedágio': "pedágio", "sem parar".
+        - 'Aluguel do Veículo': "aluguel do carro", "semanal do carro".
+        - 'Parcela do Financiamento': "parcela do carro", "financiamento".
+        - 'Seguro': "seguro do carro", "proteção veicular".
+        - 'Impostos/Taxas Anuais': "ipva", "licenciamento".
+        - 'Plano de Celular': "crédito", "plano de dados", "internet".
+        - 'Outros': Se nenhuma outra categoria se encaixar perfeitamente.
 
-  3. EXTRAIA DADOS PARA "add_income":
-     - amount: O valor BRUTO do ganho.
-     - description: A descrição do ganho.
-     - category: CLASSIFIQUE OBRIGATORIAMENTE em uma das seguintes: ['Corrida', 'Gorjeta', 'Bônus'].
-     - source: IDENTIFIQUE A PLATAFORMA. Deve ser uma das seguintes: ['Uber', '99', 'InDrive', 'Outros']. Se não for especificado, use 'Outros'.
-     - (Opcional) tax: Se o usuário mencionar a taxa do app (ex: "R$50 com taxa de R$10"), extraia o valor da taxa.
-     - (Opcional) distance: Se o usuário mencionar a quilometragem (ex: "corrida de 15km"), extraia o número.
+    2b. "add_income":
+      - amount: O valor BRUTO do ganho.
+      - description: A descrição do ganho.
+      - category: CLASSIFIQUE OBRIGATORIAMENTE em uma das seguintes: ['Corrida', 'Gorjeta', 'Bônus'].
+      - source: IDENTIFIQUE A PLATAFORMA. Deve ser uma das seguintes: ['Uber', '99', 'InDrive', 'Outros']. Se não for especificado, use 'Outros'.
+      - (Opcional) tax: Se o usuário mencionar a taxa do app (ex: "R$50 com taxa de R$10"), extraia o valor da taxa.
+      - (Opcional) distance: Se o usuário mencionar a quilometragem (ex: "corrida de 15km"), extraia o número.
 
-  4. EXTRAIA DADOS PARA "add_reminder":
-     - description: O que é o lembrete.
-     - date: A data E HORA futuras no formato ISO 8601 (YYYY-MM-DDTHH:mm:ss.sssZ). A data de hoje é ${currentDate}. Resolva datas relativas como "amanhã às 15h" ou "dia 15" usando este contexto. Se a hora não for especificada, use 09:00 como padrão. A resposta DEVE estar em formato ISO 8601 completo.
-     - type: CLASSIFIQUE OBRIGATORIAMENTE em um dos seguintes: ['Pagamento', 'Manutenção', 'Documento', 'Outro'].
+    2c. EXTRAIA DADOS PARA "add_reminder":
+      - extraia 'description', 'date' e 'type'.
+      - O 'type' DEVE ser uma das categorias de gasto ou ganho que você já conhece (ex: 'Pagamento', 'Manutenção', 'Limpeza', 'Combustível', etc.). Se não se encaixar, use 'Outros'.
+      - Se a data for **absoluta** (ex: "amanhã às 15h", "dia 20"), extraia 'date' no formato YYYY-MM-DDTHH:mm:ss.
+      - Se a data for **relativa** (ex: "daqui 5 minutos", "em 2 horas"), extraia 'relativeMinutes' com o total de minutos.
+      - **Regra:** Se 'relativeMinutes' for extraído, NÃO extraia 'date'.
 
-  5. FORMATO DA RESPOSTA:
+  3. FORMATO DA RESPOSTA:
      Responda APENAS com um objeto JSON válido, sem nenhum texto ou formatação adicional.
      {
        "intent": "string",
@@ -182,15 +192,15 @@ export async function interpretDriverMessage(message, currentDate) {
   - User: "ver detalhes"
     Response: { "intent": "get_transaction_details", "data": {} }  
 
-  - User: "lembrete pagar o seguro do carro dia 15 deste mês"
-    Response: { "intent": "add_reminder", "data": { "description": "pagar o seguro do carro", "date": "${currentYear}-${currentMonth}-15T09:00:00.000Z", "type": "Pagamento" } }
-  - User: "me lembre de pagar a manutenção do carro dia 15 do mês que vem"
-    Response: { "intent": "add_reminder", "data": { "description": "pagar a manutenção do carro", "date": "${nextMonthExampleISO}", "type": "Manutenção" } }
-  - User: "lembrete trocar o óleo amanhã às 15h"
-    Response: { "intent": "add_reminder", "data": { "description": "trocar o óleo", "date": "${tomorrow.toISOString().replace(/T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, 'T15:00:00.000Z')}", "type": "Manutenção" } }
-  - User: "Me lembre de testar o aplicativo hoje"
-    Response: { "intent": "add_reminder", "data": { "description": "testar o aplicativo", "date": "${now.toISOString().split('T')[0]}T09:00:00.000Z", "type": "Outro" } }
-
+  - User: "me lembre hoje daqui 5 minutos de realizar ajustes no copiloto"
+    Response: { "intent": "add_reminder", "data": { "description": "realizar ajustes no copiloto", "relativeMinutes": 5, "type": "Outro" } }
+  - User: "me lembre em 2 horas de pagar a conta"
+    Response: { "intent": "add_reminder", "data": { "description": "pagar a conta", "relativeMinutes": 120, "type": "Pagamento" } }    
+  - User: "lembrete pagar seguro amanhã às 15h"
+    Response: { "intent": "add_reminder", "data": { "description": "pagar seguro", "date": "${tomorrowISO}T15:00:00", "type": "Pagamento" } }
+  - User: "lembrete pagar manutenção dia 15 do mês que vem"
+    Response: { "intent": "add_reminder", "data": { "description": "pagar manutenção", "date": "${nextMonthExampleISO.slice(0, 10)}T09:00:00", "type": "Manutenção" } }
+  
   - User: "remover #a4b8c"
     Response: { "intent": "delete_transaction", "data": { "messageId": "a4b8c" } }
   - User: "apagar o gasto #d9e2f"
