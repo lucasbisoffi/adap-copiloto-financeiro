@@ -1,4 +1,5 @@
 import twilio from "twilio";
+import { devLog } from "../helpers/logger.js";
 //import { formatPhoneNumber } from "../utils/formatPhone.js";
 
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
@@ -17,18 +18,25 @@ export async function sendReportImage(userId, imageUrl, caption) {
   }
 }
 
-export async function sendTemplatedMessage(to, templateName, bodyVariables) {
+export async function sendTemplatedMessage(to, contentSid, contentVariables) {
+  
+  // Verificação de segurança: não prosseguir se o ID do template não for fornecido.
+  if (!contentSid) {
+    console.error(`❌ Falha ao enviar mensagem: O ID do template (contentSid) não foi fornecido.`);
+    throw new Error('O ID do template (contentSid) é obrigatório.');
+  }
+
   try {
+    devLog(`Enviando mensagem de template para ${to}... SID: ${contentSid}`);
     await client.messages.create({
-      // O twilioPhoneNumber precisa estar no formato 'whatsapp:+...'
-      from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
-      to: to, // O 'to' (userId) já está no formato correto.
-      // O 'contentSid' é a chave para enviar templates.
-      contentSid: process.env.TWILIO_TEMPLATE_REMINDER,
-      contentVariables: JSON.stringify(bodyVariables),
+      from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`, 
+      to: to,
+      contentSid: contentSid, 
+      contentVariables: JSON.stringify(contentVariables),
     });
-    console.log(`✅ Mensagem de template '${templateName}' enviada para ${to}`);
+    devLog(`✅ Mensagem de template enviada com sucesso para ${to}.`);
   } catch (error) {
-    console.error(`❌ Falha ao enviar mensagem de template para ${to}:`, error.message);
+    devLog(`❌ Falha ao enviar mensagem de template para ${to}: ${error.message}`);
+    throw error;
   }
 }
