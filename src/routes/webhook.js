@@ -1,19 +1,21 @@
-import { sendOrLogMessage } from "../helpers/responseHelper.js";
+import { sendOrLogMessage, sendChunkedMessage } from "../helpers/responseHelper.js";
+import { devLog } from "../helpers/logger.js";
 import { fromZonedTime } from "date-fns-tz";
 import { TIMEZONE } from "../utils/dateUtils.js";
-
 import express from "express";
 import twilio from "twilio";
 import { customAlphabet } from "nanoid";
-
+import Expense from "../models/Expense.js";
+import Income from "../models/Income.js";
+import UserStats from "../models/UserStats.js";
+import Reminder from "../models/Reminder.js";
+import Vehicle from "../models/Vehicle.js";
 import {
   interpretDriverMessage,
   transcribeAudioWithWhisper,
 } from "../services/aiService.js";
 import { generateProfitChart } from "../services/chartService.js";
 import { sendReportImage } from "../services/twilioService.js";
-
-import { devLog } from "../helpers/logger.js";
 import {
   getPeriodSummary,
   getProfitReportData,
@@ -35,17 +37,22 @@ import {
   sendReminderDeletedMessage,
 } from "../helpers/messages.js";
 
-import Expense from "../models/Expense.js";
-import Income from "../models/Income.js";
-import UserStats from "../models/UserStats.js";
-import Reminder from "../models/Reminder.js";
-import Vehicle from "../models/Vehicle.js";
 const router = express.Router();
 let conversationState = {};
 
 router.post("/", async (req, res) => {
   const twiml = new twilio.twiml.MessagingResponse();
   const userId = req.body.From;
+  let responseSent = false; // Flag para controlar o envio da resposta
+
+  // Função helper para finalizar a requisição HTTP
+  const finalizeResponse = () => {
+    if (!responseSent) {
+      res.writeHead(200, { "Content-Type": "text/xml" });
+      res.end(twiml.toString());
+      responseSent = true;
+    }
+  };
 
   try {
     let messageToProcess;
@@ -76,10 +83,10 @@ router.post("/", async (req, res) => {
     ) {
       if (currentState) {
         delete conversationState[userId];
-        twiml.message( "Ok, operação cancelada. 👍");
+        sendOrLogMessage(twiml,"Ok, operação cancelada. 👍");
         devLog(`Fluxo cancelado pelo usuário: ${userId}`);
       } else {
-        twiml.message(
+        sendOrLogMessage(twiml,
           "Não há nenhuma operação em andamento para cancelar. Como posso ajudar?"
         );
       }
@@ -91,7 +98,7 @@ router.post("/", async (req, res) => {
       devLog(`Fluxo de Cadastro de Veículo - Passo: ${currentState.step}`);
 
       if (req.body.MediaUrl0 && req.body.MediaContentType0.includes("audio")) {
-        twiml.message(
+        sendOrLogMessage(twiml,
           "✋ Para garantir a precisão dos dados, o cadastro do veículo deve ser feito *apenas por texto*.\n\nPor favor, digite sua resposta."
         );
         res.writeHead(200, { "Content-Type": "text/xml" });
@@ -107,7 +114,7 @@ router.post("/", async (req, res) => {
         case "awaiting_brand":
           currentState.tempData = vehicleFlowMessage;
           currentState.step = "confirming_brand";
-          twiml.message(
+          sendOrLogMessage(twiml,
             `Você digitou: "*${vehicleFlowMessage}*"\n\nEstá correto? Responda "*sim*" para confirmar, ou envie a marca novamente.`
           );
           break;
@@ -117,12 +124,12 @@ router.post("/", async (req, res) => {
             currentState.brand = currentState.tempData;
             delete currentState.tempData;
             currentState.step = "awaiting_model";
-            twiml.message(
+            sendOrLogMessage(twiml,
               "✅ Marca confirmada!\n\nAgora, qual o *modelo* do seu carro? (Ex: Onix, Argo, HB20 Comfort Plus)"
             );
           } else {
             currentState.tempData = vehicleFlowMessage;
-            twiml.message(
+            sendOrLogMessage(twiml,
               `Ok, entendi: "*${vehicleFlowMessage}*"\n\nCorreto? (Responda "*sim*" ou envie novamente)`
             );
           }
@@ -131,7 +138,7 @@ router.post("/", async (req, res) => {
         case "awaiting_model":
           currentState.tempData = vehicleFlowMessage;
           currentState.step = "confirming_model";
-          twiml.message(
+          sendOrLogMessage(twiml,
             `Modelo: "*${vehicleFlowMessage}*"\n\nEstá correto? (Responda "*sim*" ou envie novamente)`
           );
           break;
@@ -141,17 +148,17 @@ router.post("/", async (req, res) => {
             currentState.model = currentState.tempData;
             delete currentState.tempData;
             currentState.step = "awaiting_year";
-            twiml.message(
+            sendOrLogMessage(twiml,
               "✅ Modelo confirmado!\n\nQual o *ano* do seu carro? (Ex: 2022)"
             );
           } else {
             currentState.tempData = vehicleFlowMessage;
-            twiml.message(
+            sendOrLogMessage(twiml,
               `Ok, entendi: "*${vehicleFlowMessage}*"\n\nCorreto? (Responda "*sim*" ou envie novamente)`
             );
           }
           break;
-        
+
         case "awaiting_year":
           const currentYear = new Date().getFullYear();
           const inputYear = parseInt(vehicleFlowMessage);
@@ -160,13 +167,13 @@ router.post("/", async (req, res) => {
             vehicleFlowMessage.length !== 4 ||
             inputYear > currentYear + 1
           ) {
-            twiml.message(
+            sendOrLogMessage(twiml,
               "Opa, o ano parece inválido. Por favor, envie apenas o ano com 4 dígitos (ex: 2021)."
             );
           } else {
             currentState.tempData = vehicleFlowMessage;
             currentState.step = "confirming_year";
-            twiml.message(
+            sendOrLogMessage(twiml,
               `Ano: *${vehicleFlowMessage}*\n\nEstá correto? (Responda "*sim*" ou envie novamente)`
             );
           }
@@ -177,7 +184,7 @@ router.post("/", async (req, res) => {
             currentState.year = parseInt(currentState.tempData);
             delete currentState.tempData;
             currentState.step = "awaiting_mileage";
-            twiml.message(
+            sendOrLogMessage(twiml,
               "✅ Ano confirmado!\n\nPara finalizar, qual a *quilometragem (KM)* atual do painel?"
             );
           } else {
@@ -187,12 +194,12 @@ router.post("/", async (req, res) => {
               isNaN(parseInt(vehicleFlowMessage)) ||
               vehicleFlowMessage.length !== 4
             ) {
-              twiml.message(
+              sendOrLogMessage(twiml,
                 "Este ano também parece inválido. Por favor, envie o ano com 4 dígitos (ex: 2021)."
               );
             } else {
               currentState.tempData = vehicleFlowMessage;
-              twiml.message(
+              sendOrLogMessage(twiml,
                 `Ok, entendi: *${vehicleFlowMessage}*\n\nCorreto? (Responda "*sim*" ou envie novamente)`
               );
             }
@@ -202,13 +209,13 @@ router.post("/", async (req, res) => {
         case "awaiting_mileage":
           const mileage = vehicleFlowMessage.replace(/\D/g, "");
           if (isNaN(parseInt(mileage))) {
-            twiml.message(
+            sendOrLogMessage(twiml,
               "Não entendi a quilometragem. Por favor, envie apenas os números (ex: 85000)."
             );
           } else {
             currentState.tempData = parseInt(mileage);
             currentState.step = "confirming_mileage";
-            twiml.message(
+            sendOrLogMessage(twiml,
               `Quilometragem: *${mileage} KM*\n\nEstá correto? (Responda "*sim*" para finalizar o cadastro)`
             );
           }
@@ -233,26 +240,27 @@ router.post("/", async (req, res) => {
               { upsert: true }
             );
 
-            twiml.message(
+            sendOrLogMessage(twiml,
               `🚀 Prontinho! Seu *${currentState.brand} ${currentState.model}* foi cadastrado com sucesso.`
             );
             delete conversationState[userId];
           } else {
             const newMileage = vehicleFlowMessage.replace(/\D/g, "");
             if (isNaN(parseInt(newMileage))) {
-              twiml.message(
+              sendOrLogMessage(twiml,
                 "Este valor também parece inválido. Por favor, envie apenas os números (ex: 85000)."
               );
             } else {
               currentState.tempData = parseInt(newMileage);
-              twiml.message(
+              sendOrLogMessage(twiml,
                 `Ok, entendi: *${newMileage} KM*\n\nCorreto? (Responda "*sim*" para finalizar)`
               );
             }
           }
           break;
+
         default:
-          twiml.message(
+          sendOrLogMessage(twiml,
             "Hmm, não entendi sua resposta. Você está no meio do cadastro do veículo. Digite 'cancelar' para sair ou responda à última pergunta."
           );
           break;
@@ -264,7 +272,7 @@ router.post("/", async (req, res) => {
     // fluxo com a IA começa aqui, só é executado se nenhum fluxo de conversa estiver ativo
     const userStats = await UserStats.findOne({ userId }, { blocked: 1 });
     if (userStats?.blocked) {
-      twiml.message( "🚫 Você está bloqueado de usar a ADAP.");
+      sendOrLogMessage(twiml,"🚫 Você está bloqueado de usar a ADAP.");
       res.writeHead(200, { "Content-Type": "text/xml" });
       return res.end(twiml.toString());
     }
@@ -284,7 +292,7 @@ router.post("/", async (req, res) => {
           flow: "vehicle_registration",
           step: "awaiting_brand",
         };
-        twiml.message(
+        sendOrLogMessage(twiml,
           "🚗 Vamos cadastrar seu carro!\n\nResponda a sequência de perguntas e pare a qualquer momento digitando 'cancelar'.\n\nQual a *marca* do seu veículo? (Ex: Chevrolet, Fiat, Hyundai)"
         );
         break;
@@ -298,7 +306,7 @@ router.post("/", async (req, res) => {
           category === "Corrida" &&
           (!distance || typeof distance !== "number" || distance <= 0)
         ) {
-          twiml.message(
+          sendOrLogMessage(twiml,
             "📈 Para registrar sua corrida, preciso saber a *quilometragem (km)*.\n\nPor favor, envie novamente com a distância. Exemplo:\n_Ganhei 30 na 99 em 10km_"
           );
           // Interrompe o fluxo aqui, não salva o registro.
@@ -366,7 +374,7 @@ router.post("/", async (req, res) => {
             );
             sendExpenseDeletedMessage(twiml, expense);
           } else {
-            twiml.message(
+            sendOrLogMessage(twiml,
               `🚫 Nenhum registro encontrado com o ID _#${messageId}_ para exclusão.`
             );
           }
@@ -376,7 +384,7 @@ router.post("/", async (req, res) => {
       case "generate_profit_chart": {
         const { days = 7 } = interpretation.data;
 
-        twiml.message(
+        sendOrLogMessage(twiml,
           `📈 Certo! Preparando seu gráfico de lucratividade dos últimos ${days} dias...`
         );
 
@@ -385,7 +393,7 @@ router.post("/", async (req, res) => {
           const reportData = await getProfitReportData(userId, days);
 
           if (reportData.length === 0) {
-            twiml.message(
+            sendOrLogMessage(twiml,
               `📉 Não encontrei nenhuma transação nos últimos ${days} dias para gerar o gráfico.`
             );
             break;
@@ -397,7 +405,7 @@ router.post("/", async (req, res) => {
           await sendReportImage(userId, imageUrl);
         } catch (error) {
           devLog("❌ Erro ao gerar o gráfico de lucratividade:", error);
-          twiml.message(
+          sendOrLogMessage(twiml,
             "❌ Desculpe, ocorreu um erro ao tentar gerar seu gráfico. Tente novamente mais tarde."
           );
         }
@@ -421,7 +429,7 @@ router.post("/", async (req, res) => {
         devLog(`Calculando resumo de LUCRO para: Mês=${month}`);
         const summaryMessage = await getPeriodSummary(userId, month, monthName);
 
-        twiml.message( summaryMessage);
+        sendOrLogMessage(twiml,summaryMessage);
         break;
       }
       case "get_expenses_by_category": {
@@ -445,7 +453,7 @@ router.post("/", async (req, res) => {
         );
         const expenses = await getExpensesByCategory(userId, month, category);
         if (expenses.length === 0) {
-          twiml.message(
+          sendOrLogMessage(twiml,
             `Você não tem nenhum gasto registrado em *${monthName}* ${
               category ? `na categoria *${category}*` : ""
             }.`
@@ -472,7 +480,7 @@ router.post("/", async (req, res) => {
           monthName,
           category,
         };
-        twiml.message( message);
+        sendOrLogMessage(twiml,message);
         break;
       }
       case "get_incomes_by_source": {
@@ -498,7 +506,7 @@ router.post("/", async (req, res) => {
         const incomes = await getIncomesBySource(userId, month, source);
 
         if (incomes.length === 0) {
-          twiml.message(
+          sendOrLogMessage(twiml,
             `Você não tem nenhuma corrida registrada em *${monthName}* ${
               source ? `da plataforma *${source}*` : ""
             }.`
@@ -516,9 +524,15 @@ router.post("/", async (req, res) => {
           const averageRperKm = inc.total / inc.totalDistance;
 
           // Monta a linha de detalhes para cada plataforma
-          const detailsLine = `_${inc.count} corridas | ${inc.totalDistance.toFixed(1)} km | R$ ${averageRperKm.toFixed(2)} por km_`;
+          const detailsLine = `_${
+            inc.count
+          } corridas | ${inc.totalDistance.toFixed(
+            1
+          )} km | R$ ${averageRperKm.toFixed(2)} por km_`;
 
-          message += `\n*${inc._id}: R$ ${inc.total.toFixed(2)}*\n${detailsLine}\n`;
+          message += `\n*${inc._id}: R$ ${inc.total.toFixed(
+            2
+          )}*\n${detailsLine}\n`;
         });
 
         message += `\n*Total Recebido:* R$ ${totalIncome.toFixed(2)}`;
@@ -530,7 +544,7 @@ router.post("/", async (req, res) => {
           monthName,
           source,
         };
-        twiml.message(message);
+        sendOrLogMessage(twiml,message);
         break;
       }
       case "get_transaction_details": {
@@ -538,7 +552,7 @@ router.post("/", async (req, res) => {
         const previousData = conversationState[userId];
 
         if (!previousData || !previousData.month) {
-          twiml.message(
+          sendOrLogMessage(twiml,
             "Não há um relatório recente para detalhar. Peça um resumo de gastos ou ganhos primeiro."
           );
           break;
@@ -549,12 +563,19 @@ router.post("/", async (req, res) => {
         }
 
         if (!type) {
-          twiml.message(
+          sendOrLogMessage(twiml,
             'Por favor, especifique o que deseja detalhar. Ex: "detalhes gastos" ou "detalhes receitas".'
           );
           break;
         }
 
+        // A. Envie uma mensagem de "aguarde" imediata
+        sendOrLogMessage(twiml,"🧾 Ok! Gerando seu relatório detalhado, um momento...");
+
+        // B. Finalize a resposta HTTP para a Twilio AGORA
+        finalizeResponse();
+
+        // C. Continue o processamento pesado DEPOIS de responder
         const { month, monthName, category, source } = previousData;
         devLog(`Buscando detalhes para: Tipo=${type}, Mês=${month}`);
 
@@ -563,8 +584,12 @@ router.post("/", async (req, res) => {
             ? await getIncomeDetails(userId, month, monthName, source)
             : await getExpenseDetails(userId, month, monthName, category);
 
-        twiml.message( detailsMessage);
+        // D. Chame nossa nova função para enviar o relatório (que pode ser longo)
+        await sendChunkedMessage(userId, detailsMessage);
+
         delete conversationState[userId];
+
+        // Já que a resposta foi enviada, não fazemos mais nada com `twiml` aqui.
         break;
       }
       case "greeting": {
@@ -576,7 +601,7 @@ router.post("/", async (req, res) => {
           interpretation.data;
 
         if (!date && !relativeMinutes) {
-          twiml.message(
+          sendOrLogMessage(twiml,
             "⏰ Por favor, forneça uma data e hora futuras válidas..."
           );
           break;
@@ -599,7 +624,7 @@ router.post("/", async (req, res) => {
         }
 
         if (dateToSave.getTime() <= Date.now()) {
-          twiml.message(
+          sendOrLogMessage(twiml,
             "⏰ Ops, esse horário já passou! Por favor, forneça uma data e hora futuras."
           );
           break;
@@ -623,7 +648,7 @@ router.post("/", async (req, res) => {
         if (reminder) {
           sendReminderDeletedMessage(twiml, reminder);
         } else {
-          twiml.message(
+          sendOrLogMessage(twiml,
             `🚫 Nenhum lembrete com o ID _#${messageId}_ foi encontrado.`
           );
         }
@@ -644,13 +669,12 @@ router.post("/", async (req, res) => {
     }
   } catch (err) {
     devLog("ERRO CRÍTICO no webhook:", err);
-    twiml.message(
+    sendOrLogMessage(twiml,
       "Ops! 🤖 Tive um curto-circuito aqui. Se foi um áudio, tente gravar em um lugar mais silencioso."
     );
   }
 
-  res.writeHead(200, { "Content-Type": "text/xml" });
-  res.end(twiml.toString());
+  finalizeResponse();
 });
 
 export default router;

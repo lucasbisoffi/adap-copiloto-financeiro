@@ -243,7 +243,6 @@ export async function getIncomeDetails(userId, month, monthName, source) {
   let message = `🧾 *Detalhes dos Ganhos em ${monthName}*:\n\n`;
   const groupedIncomes = {};
 
-  // Agrupa as receitas por plataforma (source)
   incomes.forEach((inc) => {
     if (!groupedIncomes[inc.source]) {
       groupedIncomes[inc.source] = [];
@@ -251,17 +250,19 @@ export async function getIncomeDetails(userId, month, monthName, source) {
     groupedIncomes[inc.source].push(inc);
   });
 
-  // Monta a mensagem final agrupada
   for (const sourceName in groupedIncomes) {
-    message += `*${sourceName}*:\n`;
+    message += `*${sourceName}*:\n`; // Mantém a plataforma em negrito
     groupedIncomes[sourceName].forEach((inc) => {
-      // --- A MUDANÇA ESTÁ AQUI ---
-      let details = `   💰 ${inc.description}: *R$ ${inc.amount.toFixed(2)}*`;
+      let itemText;
       if (inc.category === "Corrida" && inc.distance) {
-        details += ` - _${inc.distance} km_`; // Adiciona a quilometragem
+        // Formato para corridas
+        itemText = `R$ ${inc.amount.toFixed(2)} [${inc.distance} km]`;
+      } else {
+        // Formato para outros ganhos (ex: Gorjeta)
+        itemText = `${inc.description}: R$ ${inc.amount.toFixed(2)}`;
       }
-      message += `${details}\n`;
-      // --- FIM DA MUDANÇA ---
+      // Adiciona o emoji e a formatação monoespaçada
+      message += `💰 \`\`\`${itemText}\`\`\`\n`;
     });
     message += `\n`;
   }
@@ -284,15 +285,16 @@ export async function getExpenseDetails(
     ),
   };
 
-  // Adiciona o filtro de categoria, se fornecido.
   if (category) {
     matchStage.category = category;
   }
 
+  // Busca os documentos completos de despesa
   const expenses = await Expense.find(matchStage).sort({
     category: 1,
     date: 1,
   });
+
   if (expenses.length === 0)
     return `Nenhum gasto encontrado em *${monthName}* ${
       category ? `na categoria *${category}*` : ""
@@ -301,20 +303,29 @@ export async function getExpenseDetails(
   let message = `🧾 *Detalhes dos Gastos em ${monthName}${
     category ? ` (${category})` : ""
   }*:\n\n`;
+    
   const expensesByCategory = {};
+  
+  // Agrupa os OBJETOS de despesa por categoria, não o texto formatado.
   expenses.forEach((expense) => {
     const groupKey = expense.category || "Outros";
-    if (!expensesByCategory[groupKey]) expensesByCategory[groupKey] = [];
-    expensesByCategory[groupKey].push(
-      `   💸 ${expense.description}: *R$ ${expense.amount.toFixed(2)}*`
-    );
+    if (!expensesByCategory[groupKey]) {
+      expensesByCategory[groupKey] = [];
+    }
+    // AQUI ESTAVA O PROBLEMA: Agora estamos adicionando o objeto completo.
+    expensesByCategory[groupKey].push(expense);
   });
 
+  // Itera sobre as categorias e os objetos de despesa para formatar a saída.
   for (const groupKey in expensesByCategory) {
-    if (!category) {
-      message += `*${groupKey}*:\n`;
-    }
-    message += `${expensesByCategory[groupKey].join("\n")}\n\n`;
+    message += `📁 *${groupKey}*:\n`;
+    expensesByCategory[groupKey].forEach(expenseItem => {
+      // Agora 'expenseItem' é o objeto de despesa, com '.amount', '.description', etc.
+      const itemText = `${expenseItem.description}: R$ ${expenseItem.amount.toFixed(2)} (#${expenseItem.messageId})`;
+      message += `  💸 \`\`\`${itemText}\`\`\`\n`;
+    });
+    message += `\n`;
   }
+
   return message.trim();
 }
