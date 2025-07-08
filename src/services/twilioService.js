@@ -40,3 +40,19 @@ export async function sendTemplatedMessage(to, contentSid, contentVariables) {
     throw error;
   }
 }
+
+export async function sendTextMessage(to, body) {
+  try {
+    devLog(`Enviando mensagem de texto para ${to}...`);
+    await client.messages.create({
+      from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
+      to: to,
+      body: body,
+    });
+    devLog(`✅ Mensagem de texto enviada com sucesso para ${to}.`);
+  } catch (error) {
+    devLog(`❌ Falha ao enviar mensagem de texto para ${to}: ${error.message}`);
+    // Não lançamos o erro para não quebrar o fluxo principal se um chunk falhar.
+    // Em um sistema de produção, poderíamos adicionar um sistema de retry aqui.
+  }
+}
