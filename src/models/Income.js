@@ -15,7 +15,7 @@ const incomeSchema = new mongoose.Schema({
   source: {
     type: String,
     required: true,
-    enum: ['Uber', '99', 'InDrive', 'UBRA', 'Garupa', 'Rota 77', 'Guri', 'Mais Próximo', 'Outros'],
+    enum: ['Uber', '99', 'InDrive', 'UBRA', 'Garupa', 'Rota 77', 'Guri', 'Mais Próximo', 'Particular', 'Outros'],
     default: 'Outros'
   },
   // CAMPO OPCIONAL: Taxa do aplicativo, caso o motorista informe.
