@@ -117,7 +117,7 @@ export async function interpretDriverMessage(message, currentDate) {
       - amount: O valor LÍQUIDO que o motorista recebeu. Este é o valor principal a ser extraído.
       - description: A descrição do ganho.
       - category: CLASSIFIQUE OBRIGATORIAMENTE em uma das seguintes: ['Corrida', 'Gorjeta', 'Bônus'].
-      - source: IDENTIFIQUE A PLATAFORMA da corrida. Deve ser uma das seguintes: ['Uber', '99', 'InDrive', 'Outros']. Se não for especificado, use 'Outros'.
+      - source: IDENTIFIQUE A PLATAFORMA da corrida. Deve ser uma das seguintes: ['Uber', '99', 'InDrive', 'UBRA', 'Garupa', 'Rota 77', 'Guri', 'Mais Próximo', 'Particular', 'Outros']. Se não for especificado, use 'Outros'.
       - distance: (Obrigatório) A quilometragem (KM) da corrida. Você DEVE extrair este valor.
       - (Opcional) tax: A taxa do aplicativo, APENAS SE o motorista mencionar explicitamente. Este valor é informativo e não deve ser subtraído do 'amount'.
       
