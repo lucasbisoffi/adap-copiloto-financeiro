@@ -36,7 +36,7 @@ async function checkAndSendReminders() {
 
         await sendTemplatedMessage(
             reminder.userId,
-            process.env.TWILIO_SANDBOX_TEMPLATE_SID, // <-- Usando o SID do Sandbox
+            'HXdaa37ff06f05b458a72e6373d887eed6', // <-- Usando o SID do Sandbox
             { 
                 "1": `Lembrete: ${reminder.description}`
             }
