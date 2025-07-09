@@ -270,6 +270,20 @@ export async function getIncomeDetails(userId, month, monthName, source) {
   return message.trim();
 }
 
+const CATEGORY_EMOJIS = {
+  'Combustível': '⛽️',
+  'Manutenção': '🔧',
+  'Limpeza': '🧼',
+  'Alimentação/Água': '🍔',
+  'Pedágio': '🛣️',
+  'Aluguel do Veículo': '🔑',
+  'Parcela do Financiamento': '💳',
+  'Seguro': '🛡️',
+  'Impostos/Taxas Anuais': '🧾',
+  'Plano de Celular': '📱',
+  'Outros': '📁' // Emoji padrão para a categoria "Outros"
+};
+
 export async function getExpenseDetails(
   userId,
   month,
@@ -318,11 +332,19 @@ export async function getExpenseDetails(
 
   // Itera sobre as categorias e os objetos de despesa para formatar a saída.
   for (const groupKey in expensesByCategory) {
+    // --- MUDANÇA PRINCIPAL AQUI ---
+
+    // 1. O emoji do ITEM agora é dinâmico. Se não encontrar, usa o dinheiro voando 💸.
+    const itemEmoji = CATEGORY_EMOJIS[groupKey] || '💸';
+    
+    // 2. O emoji da CATEGORIA agora é sempre a pasta 📁.
     message += `📁 *${groupKey}*:\n`;
+
     expensesByCategory[groupKey].forEach(expenseItem => {
-      // Agora 'expenseItem' é o objeto de despesa, com '.amount', '.description', etc.
       const itemText = `${expenseItem.description}: R$ ${expenseItem.amount.toFixed(2)} (#${expenseItem.messageId})`;
-      message += `  💸 \`\`\`${itemText}\`\`\`\n`;
+      
+      // 3. Usamos o itemEmoji dinâmico aqui.
+      message += `  ${itemEmoji} \`\`\`${itemText}\`\`\`\n`;
     });
     message += `\n`;
   }
