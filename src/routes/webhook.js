@@ -14,7 +14,7 @@ import {
   interpretDriverMessage,
   transcribeAudioWithWhisper,
 } from "../services/aiService.js";
-import { generateProfitChart } from "../services/chartService.js";
+import { generatePlatformChart } from "../services/chartService.js";
 import { sendReportImage } from "../services/twilioService.js";
 import {
   getPeriodSummary,
@@ -24,6 +24,7 @@ import {
   getIncomeDetails,
   getExpensesByCategory,
   getIncomesBySource,
+  getPeriodReport
 } from "../helpers/totalUtils.js";
 import {
   sendGreetingMessage,
@@ -35,6 +36,7 @@ import {
   sendReminderMessage,
   sendTotalRemindersMessage,
   sendReminderDeletedMessage,
+  sendPeriodReportMessage
 } from "../helpers/messages.js";
 
 const router = express.Router();
@@ -297,6 +299,20 @@ router.post("/", async (req, res) => {
         );
         break;
       }
+      case "get_vehicle_details": {
+        const userStats = await UserStats.findOne({ userId }).populate('activeVehicleId');
+
+        if (!userStats || !userStats.activeVehicleId) {
+          sendOrLogMessage(twiml, "🚗 Você ainda não cadastrou um veículo. Digite *'cadastrar carro'* para começar.");
+          break;
+        }
+
+        const vehicle = userStats.activeVehicleId;
+        const vehicleMessage = `*Seu Veículo Ativo* 🚙\n\n*Marca:* ${vehicle.brand}\n*Modelo:* ${vehicle.model}\n*Ano:* ${vehicle.year}\n*KM Atual:* ${vehicle.currentMileage.toLocaleString('pt-BR')} km`;
+        
+        sendOrLogMessage(twiml, vehicleMessage);
+        break;
+      }
       case "add_income": {
         const { amount, description, category, source, tax, distance } =
           interpretation.data;
@@ -381,55 +397,48 @@ router.post("/", async (req, res) => {
         }
         break;
       }
-      case "generate_profit_chart": {
-        const { days = 7 } = interpretation.data;
-
-        sendOrLogMessage(twiml,
-          `📈 Certo! Preparando seu gráfico de lucratividade dos últimos ${days} dias...`
-        );
+      case "generate_platform_chart": {
+        sendOrLogMessage(twiml, "📊 Certo! Preparando seu gráfico de ganhos por plataforma...");
+        
+        finalizeResponse();
 
         try {
-          devLog(`Buscando dados para o gráfico dos últimos ${days} dias...`);
-          const reportData = await getProfitReportData(userId, days);
+            const now = new Date();
+            const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+            
+            devLog(`Buscando dados para o gráfico de plataformas do mês: ${currentMonth}`);
+            const reportData = await getIncomesBySource(userId, currentMonth);
 
-          if (reportData.length === 0) {
-            sendOrLogMessage(twiml,
-              `📉 Não encontrei nenhuma transação nos últimos ${days} dias para gerar o gráfico.`
-            );
-            break;
-          }
+            if (reportData.length === 0) {
+                await sendChunkedMessage(userId, "Não encontrei nenhum ganho este mês para gerar o gráfico. 🤷‍♂️");
+                break; 
+            }
 
-          devLog("Gerando a imagem do gráfico...");
-          const imageUrl = await generateProfitChart(reportData, userId);
-          devLog(`Enviando imagem do gráfico: ${imageUrl}`);
-          await sendReportImage(userId, imageUrl);
+            devLog("Gerando a imagem e fazendo upload para o Cloudinary...");
+            // A função agora retorna a URL do Cloudinary diretamente
+            const imageUrl = await generatePlatformChart(reportData, userId);
+            
+            devLog(`Enviando imagem do gráfico via Cloudinary URL: ${imageUrl}`);
+            await sendReportImage(userId, imageUrl, "Seu gráfico de ganhos por plataforma está pronto!");
+
         } catch (error) {
-          devLog("❌ Erro ao gerar o gráfico de lucratividade:", error);
-          sendOrLogMessage(twiml,
-            "❌ Desculpe, ocorreu um erro ao tentar gerar seu gráfico. Tente novamente mais tarde."
-          );
+            devLog("❌ Erro ao gerar o gráfico de plataformas:", error);
+            await sendChunkedMessage(userId, "❌ Desculpe, ocorreu um erro ao tentar gerar seu gráfico. Tente novamente mais tarde.");
         }
-
         break;
       }
-      case "get_summary": {
-        let { month, monthName } = interpretation.data;
-
-        if (!month) {
-          const now = new Date();
-          month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
-            2,
-            "0"
-          )}`;
-          const monthNameRaw = now.toLocaleString("pt-BR", { month: "long" });
-          monthName =
-            monthNameRaw.charAt(0).toUpperCase() + monthNameRaw.slice(1);
+      case "get_period_report": {
+        const { period, month } = interpretation.data;
+        
+        let reportData;
+        // Se a IA não identificar período ou mês (ex: "resumo"), o padrão será 'semana'
+        if (!period && !month) {
+            reportData = await getPeriodReport(userId, { period: 'week' });
+        } else {
+            reportData = await getPeriodReport(userId, { period, month });
         }
-
-        devLog(`Calculando resumo de LUCRO para: Mês=${month}`);
-        const summaryMessage = await getPeriodSummary(userId, month, monthName);
-
-        sendOrLogMessage(twiml,summaryMessage);
+        
+        sendPeriodReportMessage(twiml, reportData);
         break;
       }
       case "get_expenses_by_category": {

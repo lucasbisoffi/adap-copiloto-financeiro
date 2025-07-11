@@ -82,17 +82,18 @@ export async function interpretDriverMessage(message, currentDate) {
      - "add_income": O usuário quer registrar um ganho.
      - "add_expense": O usuário quer registrar um gasto.
      - "delete_transaction": O usuário quer apagar um registro anterior. Extraia o messageId.
-     - "generate_profit_chart": O usuário quer um resumo visual de ganhos e gastos.
-     - "get_summary": O usuário pede um resumo de lucro geral (ganhos - gastos) para um período, SEM filtros de categoria ou fonte.
+     - "get_period_report": O usuário pede um resumo de lucro para um período específico (hoje, semana, mês nomeado).
      - "get_expenses_by_category": O usuário quer ver o total de gastos do mês, quebrado por categoria.
      - "get_incomes_by_source": O usuário quer ver o total de ganhos do mês, quebrado por plataforma.
      - "get_transaction_details": O usuário pede uma lista detalhada de transações após ver um resumo.
+     - "generate_platform_chart": O usuário quer um gráfico mostrando a divisão de ganhos por plataforma.
      - "add_reminder": O usuário quer criar um lembrete.
      - "delete_reminder": O usuário quer apagar um lembrete. Extraia o messageId.
      - "list_reminders": O usuário quer ver todos os lembretes pendentes.
      - "greeting": Uma saudação simples.
      - "instructions": O usuário pergunta como usar o bot.
      - "register_vehicle": O usuário quer cadastrar ou atualizar os dados do seu carro.
+     - "get_vehicle_details": O usuário quer ver as informações do seu veículo cadastrado.
      - "unknown": A intenção não se encaixa em nenhuma das anteriores.
 
   2. REGRAS PARA EXTRAÇÃO DE DADOS EM:
@@ -140,6 +141,7 @@ export async function interpretDriverMessage(message, currentDate) {
          "tax": number, 
          "distance": number, 
          "messageId": "string",
+         "period": "string ('today', 'week')",
          "days": number,
          "month": "string (YYYY-MM)",
          "monthName": "string",
@@ -163,10 +165,14 @@ export async function interpretDriverMessage(message, currentDate) {
   - User: "99 pagou 30 reais por 8km"
     Response: { "intent": "add_income", "data": { "amount": 30, "description": "pagamento", "category": "Corrida", "source": "99", "distance": 8 } }
 
-  - User: "resumo do mês"
-    Response: { "intent": "get_summary", "data": { "month": "${currentYear}-${currentMonth}", "monthName": "${monthName}" } }
-  - User: "qual foi meu lucro em janeiro?"
-    Response: { "intent": "get_summary", "data": { "month": "${currentYear}-01", "monthName": "Janeiro" } }
+  - User: "resumo de hoje"
+    Response: { "intent": "get_period_report", "data": { "period": "today" } }
+  - User: "resumo da semana"
+    Response: { "intent": "get_period_report", "data": { "period": "week" } }
+  - User: "resumo do mês" // <-- IA deve entender como o mês corrente
+    Response: { "intent": "get_period_report", "data": { "month": "${currentYear}-${currentMonth}", "monthName": "${monthName}" } }
+  - User: "qual foi meu lucro em janeiro?" // <-- AGORA USA A NOVA INTENÇÃO
+    Response: { "intent": "get_period_report", "data": { "month": "${currentYear}-01", "monthName": "Janeiro" } }
 
   - User: "gasto total"
     Response: { "intent": "get_expenses_by_category", "data": {} }
@@ -182,15 +188,17 @@ export async function interpretDriverMessage(message, currentDate) {
   - User: "ver meus ganhos"
     Response: { "intent": "get_incomes_by_source", "data": {} }
 
-  - User: "resumo da semana"
-    Response: { "intent": "generate_profit_chart", "data": { "days": 7 } }
-
   - User: "detalhes gastos"
     Response: { "intent": "get_transaction_details", "data": { "type": "expense" } }
   - User: "detalhes receitas"
     Response: { "intent": "get_transaction_details", "data": { "type": "income" } }
   - User: "ver detalhes"
-    Response: { "intent": "get_transaction_details", "data": {} }  
+    Response: { "intent": "get_transaction_details", "data": {} }
+
+  - User: "gráfico de ganhos" // <-- NOVO EXEMPLO
+    Response: { "intent": "generate_platform_chart", "data": {} }
+  - User: "pizza das plataformas" // <-- NOVO EXEMPLO (usando um jargão comum)
+    Response: { "intent": "generate_platform_chart", "data": {} }
 
   - User: "me lembre hoje daqui 5 minutos de realizar ajustes no copiloto"
     Response: { "intent": "add_reminder", "data": { "description": "realizar ajustes no copiloto", "relativeMinutes": 5, "type": "Outro" } }
@@ -217,6 +225,11 @@ export async function interpretDriverMessage(message, currentDate) {
 
   - User: "quero cadastrar meu veiculo"
     Response: { "intent": "register_vehicle", "data": {} }
+  - User: "meu carro" 
+    Response: { "intent": "get_vehicle_details", "data": {} }
+  - User: "meu veículo"
+    Response: { "intent": "get_vehicle_details", "data": {} }
+
   - User: "quais meus lembretes?"
     Response: { "intent": "list_reminders", "data": {} }
   - User: "Olá"

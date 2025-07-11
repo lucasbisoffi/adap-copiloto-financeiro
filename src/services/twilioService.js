@@ -3,12 +3,11 @@ import { devLog } from "../helpers/logger.js";
 //import { formatPhoneNumber } from "../utils/formatPhone.js";
 
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-const TWILIO_WHATSAPP_FROM = "whatsapp:+5512997054355";
 
 export async function sendReportImage(userId, imageUrl, caption) {
   try {
     const message = await client.messages.create({
-      from: TWILIO_WHATSAPP_FROM,
+      from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
       to: userId, // O userId (ex: 'whatsapp:+55...') já está no formato correto.
       mediaUrl: [imageUrl],
       body: caption,
@@ -30,7 +29,7 @@ export async function sendTemplatedMessage(to, contentSid, contentVariables) {
   try {
     devLog(`Enviando mensagem de template para ${to}... SID: ${contentSid}`);
     await client.messages.create({
-      from: TWILIO_WHATSAPP_FROM, 
+      from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`, 
       to: to,
       contentSid: contentSid, 
       contentVariables: JSON.stringify(contentVariables),
@@ -46,7 +45,7 @@ export async function sendTextMessage(to, body) {
   try {
     devLog(`Enviando mensagem de texto para ${to}...`);
     await client.messages.create({
-      from: TWILIO_WHATSAPP_FROM,
+      from: `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`,
       to: to,
       body: body,
     });

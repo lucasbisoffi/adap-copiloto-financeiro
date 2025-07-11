@@ -329,3 +329,72 @@ export async function getExpenseDetails(
 
   return message.trim();
 }
+
+export async function getPeriodReport(userId, { period, month }) {
+  const now = new Date();
+  let startDate, endDate, title;
+
+  if (month) {
+    // Lógica para mês específico (ex: "junho")
+    const [year, monthNumber] = month.split('-').map(Number);
+    startDate = new Date(year, monthNumber - 1, 1);
+    endDate = new Date(year, monthNumber, 0, 23, 59, 59);
+    title = startDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+    // Capitaliza o nome do mês
+    title = title.charAt(0).toUpperCase() + title.slice(1);
+    
+  } else {
+    // Lógica para períodos relativos (hoje, semana)
+    endDate = new Date(now);
+    switch (period) {
+      case 'today':
+        startDate = new Date(now.setHours(0, 0, 0, 0));
+        endDate.setHours(23, 59, 59, 999);
+        title = 'de Hoje';
+        break;
+      case 'week':
+      default: // Padrão é semana
+        startDate = new Date(now.setDate(now.getDate() - 7));
+        startDate.setHours(0, 0, 0, 0);
+        title = 'da Última Semana';
+        break;
+    }
+  }
+
+  const matchStage = { userId, date: { $gte: startDate, $lte: endDate } };
+
+  // O resto da lógica de agregação permanece o mesmo
+  const incomePromise = Income.aggregate([
+    { $match: matchStage },
+    { $group: { 
+        _id: null, 
+        total: { $sum: "$amount" },
+        count: { $sum: 1 },
+        totalDistance: { $sum: "$distance" }
+    }}
+  ]);
+
+  const expensePromise = Expense.aggregate([
+    { $match: matchStage },
+    { $group: { 
+        _id: null, 
+        total: { $sum: "$amount" },
+        count: { $sum: 1 }
+    }}
+  ]);
+
+  const [incomeResult, expenseResult] = await Promise.all([incomePromise, expensePromise]);
+  
+  const incomeData = incomeResult[0] || { total: 0, count: 0, totalDistance: 0 };
+  const expenseData = expenseResult[0] || { total: 0, count: 0 };
+
+  return {
+    title: title, // Passamos um título dinâmico para a mensagem
+    totalIncome: incomeData.total,
+    incomeCount: incomeData.count,
+    totalDistance: incomeData.totalDistance,
+    totalExpenses: expenseData.total,
+    expenseCount: expenseData.count,
+    profit: incomeData.total - expenseData.total,
+  };
+}

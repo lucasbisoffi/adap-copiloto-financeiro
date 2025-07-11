@@ -1,56 +1,40 @@
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { spawn } from "child_process";
 
-export async function generateProfitChart(reportData, userId) {
+export function generatePlatformChart(reportData, userId) {
   return new Promise((resolve, reject) => {
-    const sanitizedUserId = userId.replace(/[^a-zA-Z0-9]/g, "_");
-    const tempFilePath = path.join("/tmp", `profit_data_${sanitizedUserId}.json`);
-    const outputImagePath = path.join("/tmp", `profit_chart_${sanitizedUserId}.png`);
-
-    fs.writeFileSync(tempFilePath, JSON.stringify(reportData, null, 2));
-
-    if (!fs.existsSync(tempFilePath)) {
-      const errorMsg = "Erro: O JSON de lucratividade não foi salvo corretamente.";
-      console.error(errorMsg);
-      return reject(errorMsg);
-    }
-
-    const pythonCommand = process.platform === "win32" ? "python" : "python3";
+    const pythonScriptPath = path.resolve("generate_income_platform_chart.py");
+    const tempDir = os.tmpdir(); // Pega o diretório temporário do sistema operacional
     
-    const script = spawn(pythonCommand, [
-      "generate_profit_chart.py",
-      tempFilePath,
-      outputImagePath,
-    ]);
+    const dataString = JSON.stringify(reportData);
+
+    // Passamos os argumentos que o script Python espera agora
+    const pythonProcess = spawn("python3", [pythonScriptPath, dataString, userId, tempDir]);
 
     let imageUrl = "";
     let errorOutput = "";
 
-    script.stdout.on("data", (data) => {
-      const output = data.toString().trim();
-      console.log("📤 Saída do Python (Profit Chart):", output);
-      if (output.startsWith("http")) {
-        imageUrl = output;
-      }
+    pythonProcess.stdout.on("data", (data) => {
+      // O script agora retorna a URL completa do Cloudinary
+      imageUrl += data.toString().trim();
     });
 
-    script.stderr.on("data", (data) => {
+    pythonProcess.stderr.on("data", (data) => {
       errorOutput += data.toString();
-      console.error("❌ Erro do Python (Profit Chart):", data.toString());
     });
 
-    script.on("exit", (code) => {
-      console.log("🚪 Script de gráfico de lucro finalizado com código:", code);
-      if (fs.existsSync(tempFilePath)) {
-        fs.unlinkSync(tempFilePath);
+    pythonProcess.on("close", (code) => {
+      if (code !== 0) {
+        console.error(`Erro no script Python (código ${code}):`, errorOutput);
+        return reject(new Error("Falha ao gerar o gráfico de plataformas."));
       }
-
-      if (code === 0 && imageUrl) {
-        resolve(imageUrl);
-      } else {
-        reject("Erro ao gerar o gráfico de lucratividade.\n" + errorOutput);
+      if (!imageUrl) {
+        return reject(new Error("URL da imagem não foi retornada pelo script Python."));
       }
+      // Resolve com a URL segura do Cloudinary
+      resolve(imageUrl);
     });
   });
 }

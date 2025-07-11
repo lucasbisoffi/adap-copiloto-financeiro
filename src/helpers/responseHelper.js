@@ -3,9 +3,14 @@ import { sendTextMessage } from "../services/twilioService.js";
 
 //substituir 'twiml.message(' por 'sendOrLogMessage(twiml,' no webhook.js e messages.js
 export function sendOrLogMessage(twiml, message) {
-  
-  twiml.message(message);
-  
+  if (process.env.NODE_ENV === 'prod') {
+    twiml.message(message);
+  } else {
+    console.log('--- MODO TESTE ---');
+    console.log('Simulando envio de mensagem Twilio:');
+    devLog('Mensagem simulada:', message);
+    console.log('------------------');
+  }
 }
 
 const MAX_CHARS = 1550; // Limite de caracteres do WhatsApp com uma margem de segurança 50 caracteres

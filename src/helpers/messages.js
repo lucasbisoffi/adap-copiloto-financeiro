@@ -16,31 +16,31 @@ Estou aqui para te ajudar a saber se suas corridas estão dando lucro de verdade
 
 1️⃣ *PRIMEIRO PASSO: CADASTRE SEU CARRO*
 Para começar, me diga: *"cadastrar meu carro"*
-Isso é essencial para futuros relatórios de desempenho!
+Você também pode ver os dados do seu carro com: *"meu carro"*
 
-*DEPOIS, VOCÊ PODE:*
+*O QUE VOCÊ PODE FAZER:*
 
 ⛽ *Lançar Gastos:*
    - "150 de gasolina"
    - "45 na troca de óleo"
-   - "paguei 350 no aluguel do carro"
 
-💰 *Lançar Ganhos (com KM):*
+💰 *Lançar Ganhos:*
    - "ganhei 55 na uber em 15km"
-   - "99 pagou 30 reais por uma corrida de 8km"
-   - "10 de gorjeta" (não precisa de km)
+   - "10 de gorjeta"
 
-📈 *Ver Resumos e Lucro:*
-   - "resumo da semana" (gera um gráfico 📊)
-   - "lucro do mês"
-   - "quanto ganhei na 99?"
-   - "ver meus gastos"
+📊 *Ver Relatórios e Gráficos:*
+   - "resumo de hoje" (ou "semana"/"mês" atual)
+   - "gráfico de ganhos" ou "pizza de plataformas"
+   - "meus gastos" (detalhes por categoria e itens)
+   - "meus ganhos" (detalhes por plataforma)
 
 🗓️ *Criar Lembretes:*
-   - "lembrete pagar seguro dia 20 às 10h"
+   - "me lembre de pagar o seguro dia 20 às 10h"
    - "me lembre em 2 horas de abastecer"
 
-É só me mandar uma mensagem que eu anoto tudo na hora! Vamos acelerar seu controle financeiro! 🚗💨`
+Para apagar um registro, use o ID fornecido. Ex: "apagar #a4b8c".
+
+Vamos acelerar seu controle financeiro! 🚗💨`
   );
 }
 export function sendIncomeAddedMessage(twiml, incomeData) {
@@ -122,6 +122,32 @@ export function sendTotalRemindersMessage(twiml, allFutureReminders) {
   sendOrLogMessage(twiml,
     `Aqui estão seus próximos lembretes:\n\n${allFutureReminders}\n\nPara apagar um, digite "apagar lembrete #id".`
   );
+}
+export function sendPeriodReportMessage(twiml, reportData) {
+  if (reportData.incomeCount === 0 && reportData.expenseCount === 0) {
+    sendOrLogMessage(twiml, `Você ainda não tem nenhum registro para o período selecionado. Comece adicionando um ganho ou gasto!`);
+    return;
+  }
+  
+  const title = reportData.title;
+  const rPerKm = reportData.totalDistance > 0 ? (reportData.totalIncome / reportData.totalDistance).toFixed(2) : '0.00';
+  const profitEmoji = reportData.profit >= 0 ? "✅" : "❌";
+
+  let message = `📊 *Resumo ${title}*\n\n`; // Usa o título dinâmico
+
+  message += `*Ganhos* 💰\n`;
+  message += `› *Total:* R$ ${reportData.totalIncome.toFixed(2)}\n`;
+  message += `› *Corridas:* ${reportData.incomeCount}\n`;
+  message += `› *R$/km Médio:* R$ ${rPerKm}\n\n`;
+
+  message += `*Gastos* 💸\n`;
+  message += `› *Total:* R$ ${reportData.totalExpenses.toFixed(2)}\n`;
+  message += `› *Registros:* ${reportData.expenseCount}\n\n`;
+
+  message += `----------\n`;
+  message += `${profitEmoji} *Lucro:* R$ ${reportData.profit.toFixed(2)}`;
+
+  sendOrLogMessage(twiml, message);
 }
 export async function sendFinancialHelpMessage(twiml, message) {
   const prompt = `Você é o ADAP, um co-piloto financeiro. Responda à seguinte pergunta de um motorista de aplicativo de forma clara, direta e útil, em português do Brasil: "${message}"`;

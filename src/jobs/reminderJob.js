@@ -5,9 +5,7 @@ import { devLog } from "../helpers/logger.js";
 
 async function checkAndSendReminders() {
   const now = new Date();
-  devLog(
-    `[ReminderJob] Executando... Verificando lembretes para antes de ${now.toISOString()}`
-  );
+  //devLog(`[ReminderJob] Executando... Verificando lembretes para antes de ${now.toISOString()}`);
 
   try {
     const dueReminders = await Reminder.find({ date: { $lte: now } });
