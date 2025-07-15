@@ -133,6 +133,18 @@ export function sendPeriodReportMessage(twiml, reportData) {
   const rPerKm = reportData.totalDistance > 0 ? (reportData.totalIncome / reportData.totalDistance).toFixed(2) : '0.00';
   const profitEmoji = reportData.profit >= 0 ? "✅" : "❌";
 
+  // =================== INÍCIO DA LÓGICA DE CUSTOMIZAÇÃO ===================
+  // Customiza os termos com base no perfil
+  const incomeLabel = activeProfile === 'motoboy' ? 'Entregas' : 'Corridas';
+  const incomeMetricLabel = activeProfile === 'motoboy' ? 'R$/entrega' : 'R$/km Médio';
+  
+  // Calcula a métrica correta. Para motoboy, R$/entrega é mais relevante que R$/km
+  const incomeMetricValue = activeProfile === 'motoboy'
+    ? (reportData.incomeCount > 0 ? (reportData.totalIncome / reportData.incomeCount).toFixed(2) : '0.00')
+    : rPerKm;
+
+  // =================== FIM DA LÓGICA DE CUSTOMIZAÇÃO ===================
+
   let message = `📊 *Resumo ${title}*\n\n`; // Usa o título dinâmico
 
   message += `*Ganhos* 💰\n`;

@@ -7,11 +7,15 @@ const expenseSchema = new mongoose.Schema({
   userId: { type: String, required: true, index: true },
   amount: { type: Number, required: true },
   description: { type: String, required: true },
-  category: {
+  category: { type: String, required: true },
+  // CAMPO ADICIONADO
+  profileType: {
     type: String,
+    enum: ['driver', 'motoboy'],
     required: true,
-    enum: EXPENSE_CATEGORIES,
+    index: true
   },
+  
   date: { type: Date, default: Date.now },
   messageId: String,
 });

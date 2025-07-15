@@ -46,25 +46,19 @@ export async function transcribeAudioWithWhisper(audioUrl) {
 
 export async function interpretDriverMessage(message, currentDate) {
   const now = new Date(currentDate);
-
   const currentYear = now.getFullYear();
   const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
   const currentDay = String(now.getDate()).padStart(2, '0');
-  
   const monthName = now.toLocaleString('pt-BR', { month: 'long' });
   const dayOfWeekName = now.toLocaleString('pt-BR', { weekday: 'long' });
-
   const tomorrow = new Date(now);
   tomorrow.setDate(now.getDate() + 1);
   const tomorrowISO = tomorrow.toISOString().split('T')[0]; 
-
   const nextMonthDate = new Date(now);
   nextMonthDate.setMonth(now.getMonth() + 1);
-  
   const nextMonthYear = nextMonthDate.getFullYear();
   const nextMonthNumber = String(nextMonthDate.getMonth() + 1).padStart(2, '0');
   // A data exata para o exemplo será dia 15 do próximo mês, às 09:00 UTC.
-
   const nextMonthExampleISO = `${nextMonthYear}-${nextMonthNumber}-15T09:00:00.000Z`;
 
   const systemPrompt = `
@@ -81,6 +75,8 @@ export async function interpretDriverMessage(message, currentDate) {
   1. IDENTIFIQUE A INTENÇÃO:
      - "add_income": O usuário quer registrar um ganho.
      - "add_expense": O usuário quer registrar um gasto.
+     - "switch_profile": O usuário quer trocar seu perfil ativo (driver/motoboy).
+     - "add_profile": O usuário quer adicionar um novo perfil de trabalho.
      - "delete_transaction": O usuário quer apagar um registro anterior. Extraia o messageId.
      - "get_period_report": O usuário pede um resumo de lucro para um período específico (hoje, semana, mês nomeado).
      - "get_expenses_by_category": O usuário quer ver o total de gastos do mês, quebrado por categoria.
@@ -141,6 +137,7 @@ export async function interpretDriverMessage(message, currentDate) {
          "tax": number, 
          "distance": number, 
          "messageId": "string",
+         "profile": "string ('driver' ou 'motoboy')",
          "period": "string ('today', 'week')",
          "days": number,
          "month": "string (YYYY-MM)",
@@ -223,19 +220,26 @@ export async function interpretDriverMessage(message, currentDate) {
   - User: "excluir lembrete #b3988"
     Response: { "intent": "delete_reminder", "data": { "messageId": "b3988" } }
 
-  - User: "quero cadastrar meu veiculo"
-    Response: { "intent": "register_vehicle", "data": {} }
-  - User: "meu carro" 
-    Response: { "intent": "get_vehicle_details", "data": {} }
-  - User: "meu veículo"
-    Response: { "intent": "get_vehicle_details", "data": {} }
-
   - User: "quais meus lembretes?"
     Response: { "intent": "list_reminders", "data": {} }
   - User: "Olá"
     Response: { "intent": "greeting", "data": {} }
   - User: "ajuda"
     Response: { "intent": "instructions", "data": {} }
+
+  - User: "quero cadastrar meu veiculo"
+    Response: { "intent": "add_profile", "data": { "profile": "driver" } }
+  - User: "meu carro" 
+    Response: { "intent": "get_vehicle_details", "data": {} }
+  - User: "meu veículo"
+    Response: { "intent": "get_vehicle_details", "data": {} }
+  
+  - User: "mudar para moto"
+    Response: { "intent": "switch_profile", "data": { "profile": "motoboy" } }
+  - User: "usar perfil de carro"
+    Response: { "intent": "switch_profile", "data": { "profile": "driver" } }
+  - User: "quero adicionar perfil de motoboy"
+    Response: { "intent": "add_profile", "data": { "profile": "motoboy" } }
 
 
   Agora, interprete esta mensagem: "${message}"
@@ -255,6 +259,175 @@ export async function interpretDriverMessage(message, currentDate) {
     return JSON.parse(response.choices[0].message.content);
   } catch (err) {
     console.error("Erro ao interpretar IA:", err);
+    return { intent: "unknown", data: {} };
+  }
+}
+
+export async function interpretMotoboyMessage(message, currentDate) {
+  const now = new Date(currentDate);
+  const currentYear = now.getFullYear();
+  const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const currentDay = String(now.getDate()).padStart(2, '0');
+  const monthName = now.toLocaleString('pt-BR', { month: 'long' });
+  const dayOfWeekName = now.toLocaleString('pt-BR', { weekday: 'long' });
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const tomorrowISO = tomorrow.toISOString().split('T')[0]; 
+  const nextMonthDate = new Date(now);
+  nextMonthDate.setMonth(now.getMonth() + 1);
+  const nextMonthYear = nextMonthDate.getFullYear();
+  const nextMonthNumber = String(nextMonthDate.getMonth() + 1).padStart(2, '0');
+  // A data exata para o exemplo será dia 15 do próximo mês, às 09:00 UTC.
+  const nextMonthExampleISO = `${nextMonthYear}-${nextMonthNumber}-15T09:00:00.000Z`;
+
+  const systemPrompt = `
+  Você é o "ADAP", um copiloto financeiro especialista para ENTREGADORES DE MOTO (motoboys) no Brasil. Sua tarefa é interpretar mensagens em português do Brasil e extrair dados financeiros estruturados. Seja preciso e entenda o jargão do dia a dia de um entregador.
+
+  INSTRUÇÕES:
+
+  1. IDENTIFIQUE A INTENÇÃO:
+     - "add_income": O usuário quer registrar um ganho.
+     - "add_expense": O usuário quer registrar um gasto.
+     - "switch_profile": O usuário quer trocar seu perfil ativo (driver/motoboy).
+     - "add_profile": O usuário quer adicionar um novo perfil de trabalho.
+     - "delete_transaction": O usuário quer apagar um registro anterior. Extraia o messageId.
+     - "get_period_report": O usuário pede um resumo de lucro para um período específico (hoje, semana, mês nomeado).
+     - "get_expenses_by_category": O usuário quer ver o total de gastos do mês, quebrado por categoria.
+     - "get_incomes_by_source": O usuário quer ver o total de ganhos do mês, quebrado por plataforma.
+     - "get_transaction_details": O usuário pede uma lista detalhada de transações após ver um resumo.
+     - "generate_platform_chart": O usuário quer um gráfico mostrando a divisão de ganhos por plataforma.
+     - "add_reminder": O usuário quer criar um lembrete.
+     - "delete_reminder": O usuário quer apagar um lembrete. Extraia o messageId.
+     - "list_reminders": O usuário quer ver todos os lembretes pendentes.
+     - "get_motorcycle_details": O usuário quer ver as informações de sua moto cadastrada.
+     - "greeting": Uma saudação simples.
+     - "instructions": O usuário pergunta como usar o bot.
+     - "register_vehicle": O usuário quer cadastrar ou atualizar os dados do seu carro.
+     - "get_vehicle_details": O usuário quer ver as informações do seu veículo cadastrado.
+     - "unknown": A intenção não se encaixa em nenhuma das anteriores.
+
+  2. REGRAS PARA EXTRAÇÃO DE DADOS EM:
+  
+    2a. "add_expense":
+      - amount: O valor numérico do gasto.
+      - description: A descrição do gasto.
+      - category: CLASSIFIQUE OBRIGATORIAMENTE em uma das seguintes categorias de MOTO:
+        - 'Manutenção da Moto': "relação", "troca de óleo da moto", "pneu da moto", "freio".
+        - 'Combustível': "gasolina", "etanol", "abastecer".
+        - 'Acessórios': "baú", "capa de chuva", "suporte de celular".
+        - 'Aluguel da Moto': "aluguel da moto", "semanal da moto".
+        - 'Documentação': "licenciamento da moto", "IPVA da moto".
+        - 'Plano de Celular': "crédito", "plano de dados".
+        - 'Alimentação': "almoço", "janta", "lanche".
+        - 'Limpeza': "lavagem", "higienização", "lava-rápido".
+        - 'Outros': Se nenhuma outra categoria se encaixar.
+
+    2b. "add_income":
+      - amount: O valor LÍQUIDO que o entregador recebeu.
+      - description: A descrição do ganho.
+      - category: CLASSIFIQUE OBRIGATORIAMENTE em uma das seguintes: ['Entrega', 'Gorjeta', 'Bônus'].
+      - source: IDENTIFIQUE A PLATAFORMA. Deve ser uma das seguintes: ['iFood', 'Rappi', 'Loggi', 'Lalamove', 'James', 'Entrega Particular', 'Outros'].
+      - distance: (Opcional) A quilometragem (KM) da entrega. Extraia se mencionado.
+      
+    2c. EXTRAIA DADOS PARA "add_reminder":
+      - extraia 'description', 'date' e 'type'.
+      - O 'type' DEVE ser uma das categorias de gasto ou ganho que você já conhece (ex: 'Aluguel da Moto', 'Manutenção da Moto', 'Limpeza', 'Combustível', 'Entrega', etc.). Se não se encaixar, use 'Outros'.
+      - Se a data for **absoluta** (ex: "amanhã às 15h", "dia 20"), extraia 'date' no formato YYYY-MM-DDTHH:mm:ss.
+      - Se a data for **relativa** (ex: "daqui 5 minutos", "em 2 horas"), extraia 'relativeMinutes' com o total de minutos.
+      - **Regra:** Se 'relativeMinutes' for extraído, NÃO extraia 'date'.
+
+  3. FORMATO DA RESPOSTA:
+     Responda APENAS com um objeto JSON válido, sem nenhum texto ou formatação adicional.
+     {
+       "intent": "string",
+       "data": {
+         "amount": number,
+         "description": "string",
+         "category": "string",
+         "source": "string", 
+         "tax": number, 
+         "distance": number, 
+         "messageId": "string",
+         "profile": "string ('driver' ou 'motoboy')",
+         "period": "string ('today', 'week')",
+         "days": number,
+         "month": "string (YYYY-MM)",
+         "monthName": "string",
+         "date": "string (ISO 8601)",
+         "type": "string"
+       }
+     }
+
+  EXEMPLOS:
+  - User: "gastei 120 na relação"
+    Response: { "intent": "add_expense", "data": { "amount": 120, "description": "relação", "category": "Manutenção da Moto" } }
+  - User: "25 reais numa entrega do Rappi de 5km"
+    Response: { "intent": "add_income", "data": { "amount": 25, "description": "entrega", "source": "Rappi", "category": "Entrega", "distance": 5 } }
+  - User: "50 de gasolina"
+    Response: { "intent": "add_expense", "data": { "amount": 50, "description": "gasolina", "category": "Combustível" } }
+  - User: "mudar para carro"
+    Response: { "intent": "switch_profile", "data": { "profile": "driver" } }
+  - User: "quero adicionar perfil de motorista"
+    Response: { "intent": "add_profile", "data": { "profile": "driver" } }
+
+  - User: "me lembre hoje daqui 5 minutos de realizar ajustes no copiloto"
+    Response: { "intent": "add_reminder", "data": { "description": "realizar ajustes no copiloto", "relativeMinutes": 5, "type": "Outro" } }
+  - User: "me lembre em 2 horas de pagar a conta do celular"
+    Response: { "intent": "add_reminder", "data": { "description": "pagar a conta", "relativeMinutes": 120, "type": "Plano de celular" } }    
+  - User: "lembrete pagar seguro amanhã às 15h"
+    Response: { "intent": "add_reminder", "data": { "description": "pagar seguro", "date": "${tomorrowISO}T15:00:00", "type": "Documentação" } }
+  - User: "lembrete pagar manutenção dia 15 do mês que vem"
+    Response: { "intent": "add_reminder", "data": { "description": "pagar manutenção", "date": "${nextMonthExampleISO.slice(0, 10)}T09:00:00", "type": "Manutenção da Moto" } }
+  
+  - User: "remover #a4b8c"
+    Response: { "intent": "delete_transaction", "data": { "messageId": "a4b8c" } }
+  - User: "apagar o gasto #d9e2f"
+    Response: { "intent": "delete_transaction", "data": { "messageId": "d9e2f" } }
+  - User: "excluir receita #f1g3h"
+    Response: { "intent": "delete_transaction", "data": { "messageId": "f1g3h" } }
+
+  - User: "remover lembrete #a4b08"
+    Response: { "intent": "delete_reminder", "data": { "messageId": "a4b08" } }
+  - User: "apagar o lembrete #265dd"
+    Response: { "intent": "delete_reminder", "data": { "messageId": "265dd" } }
+  - User: "excluir lembrete #b3988"
+    Response: { "intent": "delete_reminder", "data": { "messageId": "b3988" } }
+
+  - User: "quais meus lembretes?"
+    Response: { "intent": "list_reminders", "data": {} }
+  - User: "Olá"
+    Response: { "intent": "greeting", "data": {} }
+  - User: "ajuda"
+    Response: { "intent": "instructions", "data": {} }
+
+  - User: "mudar para moto"
+    Response: { "intent": "switch_profile", "data": { "profile": "motoboy" } }
+  - User: "usar perfil de carro"
+    Response: { "intent": "switch_profile", "data": { "profile": "driver" } }
+  - User: "quero adicionar perfil de motoboy"
+    Response: { "intent": "add_profile", "data": { "profile": "motoboy" } }
+  
+  - User: "minha moto" // <-- NOVO EXEMPLO
+    Response: { "intent": "get_motorcycle_details", "data": {} }
+  - User: "dados da minha moto" // <-- NOVO EXEMPLO
+    Response: { "intent": "get_motorcycle_details", "data": {} }
+
+  Agora, interprete esta mensagem: "${message}"
+  `;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: message },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 250,
+    });
+    return JSON.parse(response.choices[0].message.content);
+  } catch (err) {
+    console.error("Erro ao interpretar IA (Motoboy):", err);
     return { intent: "unknown", data: {} };
   }
 }
