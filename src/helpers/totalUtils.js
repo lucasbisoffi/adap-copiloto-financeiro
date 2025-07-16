@@ -59,17 +59,14 @@ export async function getIncomeDetails(userId, month, monthName, source, activeP
   });
 
   for (const sourceName in groupedIncomes) {
-    message += `*${sourceName}*:\n`; // Mantém a plataforma em negrito
+    message += `*${sourceName}*:\n`;
     groupedIncomes[sourceName].forEach((inc) => {
       let itemText;
-      if (inc.category === "Corrida" && inc.distance) {
-        // Formato para corridas
-        itemText = `R$ ${inc.amount.toFixed(2)} [${inc.distance} km]`;
+      if ((inc.category === "Corrida" || inc.category === "Entrega") && inc.distance) {
+        itemText = `R$ ${inc.amount.toFixed(2)} [${inc.distance} km] (#${inc.messageId})`;
       } else {
-        // Formato para outros ganhos (ex: Gorjeta)
-        itemText = `${inc.description}: R$ ${inc.amount.toFixed(2)}`;
+        itemText = `${inc.description}: R$ ${inc.amount.toFixed(2)} (#${inc.messageId})`;
       }
-      // Adiciona o emoji e a formatação monoespaçada
       message += `💰 \`\`\`${itemText}\`\`\`\n`;
     });
     message += `\n`;
