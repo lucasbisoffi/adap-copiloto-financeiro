@@ -8,6 +8,11 @@ yarn-debug.log*
 yarn-error.log*
 /tmp
 
+# Arquivos de Backup
+*.gz
+*.zip
+*.bak
+
 # Arquivo de variáveis de ambiente
 .env
 .env.local

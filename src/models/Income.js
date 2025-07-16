@@ -1,34 +1,22 @@
 import mongoose from "mongoose";
-import { INCOME_CATEGORIES } from '../utils/categories.js';
+import { ALL_INCOME_CATEGORIES } from '../utils/categories.js';
 
 const incomeSchema = new mongoose.Schema({
   userId: { type: String, required: true, index: true },
-  // CAMPO CHAVE: Este é o valor LÍQUIDO que o motorista recebe.
   amount: { type: Number, required: true },
   description: { type: String, required: true },
-  category: {
-    type: String,
+  category: { type: String, required: true, enum: ALL_INCOME_CATEGORIES },
+  source: { type: String, required: true },
+  tax: { type: Number, required: false },
+  distance: { type: Number, required: false }, //distancia era obrigatoria 
+  // CAMPO ADICIONADO
+  profileType: { 
+    type: String, 
+    enum: ['driver', 'motoboy'],
     required: true,
-    enum: INCOME_CATEGORIES
+    index: true
   },
-  // De qual plataforma veio o ganho?
-  source: {
-    type: String,
-    required: true,
-    enum: ['Uber', '99', 'InDrive', 'UBRA', 'Garupa', 'Rota 77', 'Guri', 'Mais Próximo', 'Particular', 'Outros'],
-    default: 'Outros'
-  },
-  // CAMPO OPCIONAL: Taxa do aplicativo, caso o motorista informe.
-  // Não é usado para calcular o 'amount'.
-  tax: {
-    type: Number,
-    required: false
-  },
-  // CAMPO OPCIONAL: Distância da corrida em KM, para análises futuras de R$/KM.
-  distance: {
-    type: Number,
-    required: true
-  },
+  
   date: { type: Date, default: Date.now },
   messageId: String,
 });
