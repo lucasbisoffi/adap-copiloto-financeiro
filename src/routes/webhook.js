@@ -14,6 +14,7 @@ import UserStats from "../models/UserStats.js";
 import Reminder from "../models/Reminder.js";
 import Vehicle from "../models/Vehicle.js";
 import Motorcycle from "../models/Motorcycle.js";
+import { PROFILE_CONFIG } from "../utils/categories.js";
 import {
   interpretDriverMessage,
   interpretMotoboyMessage,
@@ -73,9 +74,6 @@ router.post("/", async (req, res) => {
     }
     devLog(`Mensagem de ${userId} para processar: "${messageToProcess}"`);
 
-    // --- ESTRUTURA LÓGICA CORRETA ---
-
-    // 1. LÓGICA PARA CANCELAR (SEMPRE A PRIORIDADE MÁXIMA)
     const currentState = conversationState[userId];
     if (messageToProcess.toLowerCase().trim() === "cancelar") {
       if (currentState) {
@@ -90,13 +88,14 @@ router.post("/", async (req, res) => {
       return finalizeResponse();
     }
 
-    // 2. LÓGICA PARA FLUXOS DE CONVERSAÇÃO ATIVOS
     if (
       currentState &&
       (currentState.flow === "vehicle_registration" ||
         currentState.flow === "motorcycle_registration")
     ) {
       const isMotorcycle = currentState.flow === "motorcycle_registration";
+      const config = isMotorcycle ? PROFILE_CONFIG.motoboy : PROFILE_CONFIG.driver; // <-- CORREÇÃO 2: DEFININDO CONFIG
+      
       const vehicleType = isMotorcycle ? "moto" : "carro";
       const vehicleEmoji = isMotorcycle ? "🏍️" : "🚗";
 
@@ -191,7 +190,7 @@ router.post("/", async (req, res) => {
               "✅ Ano confirmado!\n\nPara finalizar, qual a *quilometragem (KM)* atual do painel?"
             );
           } else {
-            currentState.tempData = flowMessage; // Assume a nova mensagem como a correção
+            currentState.tempData = flowMessage; 
             sendOrLogMessage(
               twiml,
               `Ok, entendi: *${flowMessage}*\n\nCorreto? (Responda "*sim*" ou envie novamente)`
@@ -258,7 +257,7 @@ router.post("/", async (req, res) => {
             }
             sendOrLogMessage(
               twiml,
-              `${vehicleEmoji} Prontinho! Sua *${currentState.brand} ${currentState.model}* foi cadastrada com sucesso.`
+              `${config.emoji} Prontinho! Su${config.artigoDefinido} *${currentState.brand} ${currentState.model}* foi cadastrad${config.artigoDefinido} com sucesso.`
             );
             delete conversationState[userId];
           } else {
@@ -281,10 +280,8 @@ router.post("/", async (req, res) => {
       return finalizeResponse();
     }
 
-    // 3. A PARTIR DAQUI, SABEMOS QUE NÃO ESTAMOS EM UM FLUXO DE CONVERSA.
     let userStats = await UserStats.findOne({ userId });
 
-    // 4. LÓGICA DE ONBOARDING PARA NOVOS USUÁRIOS
     if (!userStats) {
       const choice = messageToProcess.trim();
       if (choice === "1" || choice === "2") {
@@ -295,6 +292,7 @@ router.post("/", async (req, res) => {
           activeProfile: profileType,
           welcomedToV2: true,
         });
+        const config = PROFILE_CONFIG[profileType];
         const flow =
           profileType === "driver"
             ? "vehicle_registration"
@@ -313,7 +311,6 @@ router.post("/", async (req, res) => {
       return finalizeResponse();
     }
 
-    // 5. LÓGICA DE BOAS-VINDAS V2 PARA USUÁRIOS ANTIGOS
     if (!userStats.welcomedToV2) {
       const updateMessage =
         '🎉 *Novidade no ADAP!* 🎉\n\nAgora o seu copiloto também ajuda *entregadores de moto*!\n\nVocê pode adicionar um perfil de motoboy, ou trocar entre seus perfis a qualquer momento. Experimente dizer:\n\n› _"adicionar perfil de moto"_\n› _"mudar para moto"_';
@@ -322,7 +319,6 @@ router.post("/", async (req, res) => {
       await userStats.save();
     }
 
-    // 6. LÓGICA PRINCIPAL (IA E SWITCH DE INTENÇÕES)
     const generateId = customAlphabet("1234567890abcdef", 5);
     const todayISO = new Date().toISOString();
     let interpretation;
@@ -368,71 +364,52 @@ router.post("/", async (req, res) => {
           { userId },
           { $set: { [`profiles.${profile}`]: true } }
         );
+        const config = PROFILE_CONFIG[profile];
         const flow =
           profile === "driver"
             ? "vehicle_registration"
             : "motorcycle_registration";
-        const vehicleName = profile === "driver" ? "carro" : "moto";
+        
         conversationState[userId] = { flow, step: "awaiting_brand" };
+        
         sendOrLogMessage(
           twiml,
-          `✅ Perfil de ${
-            profile === "driver" ? "Motorista" : "Entregador"
-          } adicionado! Para finalizar, vamos cadastrar sua ${vehicleName}.\n\nQual a *marca* dela?`
+          `✅ Perfil de ${config.name} adicionado! Para finalizar, vamos cadastrar su${config.artigoDefinido} ${config.vehicleName}.\n\nQual a *marca* dela?`
         );
         break;
       }
       case "get_vehicle_details": {
+        const config = PROFILE_CONFIG['driver']; 
         if (!userStats.activeVehicleId) {
-          sendOrLogMessage(
-            twiml,
-            "🚗 Você ainda não cadastrou um veículo. Use o comando 'adicionar perfil de motorista'."
-          );
+          sendOrLogMessage(twiml, `${config.emoji} Você ainda não cadastrou ${config.artigoIndefinido} ${config.vehicleName}. Diga "adicionar perfil de motorista" para começar.`);
           break;
         }
         const vehicle = await Vehicle.findById(userStats.activeVehicleId);
-        const vehicleMessage = `*Seu Veículo Ativo* 🚙\n\n*Marca:* ${
-          vehicle.brand
-        }\n*Modelo:* ${vehicle.model}\n*Ano:* ${
-          vehicle.year
-        }\n*KM Atual:* ${vehicle.currentMileage.toLocaleString("pt-BR")} km`;
+        const vehicleMessage = `*Seu ${config.vehicleName.charAt(0).toUpperCase() + config.vehicleName.slice(1)} Ativo* ${config.emoji}\n\n*Marca:* ${vehicle.brand}\n*Modelo:* ${vehicle.model}\n*Ano:* ${vehicle.year}\n*KM Atual:* ${vehicle.currentMileage.toLocaleString("pt-BR")} km`;
         sendOrLogMessage(twiml, vehicleMessage);
         break;
       }
       case "get_motorcycle_details": {
+        const config = PROFILE_CONFIG['motoboy'];
         if (!userStats.activeMotorcycleId) {
-          sendOrLogMessage(
-            twiml,
-            "🏍️ Você ainda não cadastrou uma moto. Use o comando 'adicionar perfil de moto'."
-          );
+          sendOrLogMessage(twiml, `${config.emoji} Você ainda não cadastrou ${config.artigoIndefinido} ${config.vehicleName}. Diga "adicionar perfil de moto" para começar.`);
           break;
         }
-        const motorcycle = await Motorcycle.findById(
-          userStats.activeMotorcycleId
-        );
-        const motorcycleMessage = `*Sua Moto Ativa* 🏍️\n\n*Marca:* ${
-          motorcycle.brand
-        }\n*Modelo:* ${motorcycle.model}\n*Ano:* ${
-          motorcycle.year
-        }\n*KM Atual:* ${motorcycle.currentMileage.toLocaleString("pt-BR")} km`;
+        const motorcycle = await Motorcycle.findById(userStats.activeMotorcycleId);
+        const motorcycleMessage = `*Sua ${config.vehicleName.charAt(0).toUpperCase() + config.vehicleName.slice(1)} Ativa* ${config.emoji}\n\n*Marca:* ${motorcycle.brand}\n*Modelo:* ${motorcycle.model}\n*Ano:* ${motorcycle.year}\n*KM Atual:* ${motorcycle.currentMileage.toLocaleString("pt-BR")} km`;
         sendOrLogMessage(twiml, motorcycleMessage);
         break;
       }
 
       case "add_income": {
-        const { amount, description, category, source, tax, distance } =
-          interpretation.data;
+        const { amount, description, category, source, tax, distance } = interpretation.data;
+        const config = PROFILE_CONFIG[userStats.activeProfile];
 
-        // A quilometragem é obrigatória para registrar um ganho de corrida.
         if (
-          category === "Corrida" &&
+          (category === "Corrida" || category === "Entrega") && 
           (!distance || typeof distance !== "number" || distance <= 0)
         ) {
-          sendOrLogMessage(
-            twiml,
-            "📈 Para registrar sua corrida, preciso saber a *quilometragem (km)*.\n\nPor favor, envie novamente com a distância. Exemplo:\n_Ganhei 30 na 99 em 10km_"
-          );
-          // Interrompe o fluxo aqui, não salva o registro.
+          sendOrLogMessage(twiml, `📈 Para registrar sua ${config.incomeTerm}, preciso saber a *quilometragem (km)*.\n\nPor favor, envie novamente com a distância.`);
           break;
         }
 
@@ -490,14 +467,12 @@ router.post("/", async (req, res) => {
           activeProfile: userStats.activeProfile,
         };
 
-        // Se a IA não der um período, o padrão é 'week'
         if (!period && !month) {
           reportOptions.period = "week";
         }
 
         const reportData = await getPeriodReport(userId, reportOptions);
 
-        // CORREÇÃO: Adicione 'userStats.activeProfile' como o terceiro argumento
         sendPeriodReportMessage(twiml, reportData, userStats.activeProfile);
 
         break;
@@ -522,8 +497,8 @@ router.post("/", async (req, res) => {
           const reportData = await getIncomesBySource(
             userId,
             currentMonth,
-            null, // `source` é null para pegar todas
-            userStats.activeProfile // <-- ADICIONE ESTE PARÂMETRO
+            null, 
+            userStats.activeProfile 
           );
 
           if (reportData.length === 0) {
@@ -535,7 +510,6 @@ router.post("/", async (req, res) => {
           }
 
           devLog("Gerando a imagem e fazendo upload para o Cloudinary...");
-          // A função agora retorna a URL do Cloudinary diretamente
           const imageUrl = await generatePlatformChart(reportData, userId);
 
           devLog(`Enviando imagem do gráfico via Cloudinary URL: ${imageUrl}`);
@@ -630,7 +604,6 @@ router.post("/", async (req, res) => {
             source || "Todas"
           }`
         );
-        // A função agora retorna os dados com contagem e distância!
         const incomes = await getIncomesBySource(
           userId,
           month,
@@ -638,13 +611,11 @@ router.post("/", async (req, res) => {
           userStats.activeProfile
         );
 
+        const config = PROFILE_CONFIG[userStats.activeProfile]; 
+        const incomeTermPlural = config.incomeTerm === 'Entrega' ? 'entregas' : 'corridas';
+
         if (incomes.length === 0) {
-          sendOrLogMessage(
-            twiml,
-            `Você não tem nenhuma corrida registrada em *${monthName}* ${
-              source ? `da plataforma *${source}*` : ""
-            }.`
-          );
+          sendOrLogMessage(twiml, `Você não tem nenhuma ${incomeTermPlural} registrada em *${monthName}* ${source ? `da plataforma *${source}*` : ""}.`);
           break;
         }
 
@@ -657,12 +628,7 @@ router.post("/", async (req, res) => {
           totalIncome += inc.total;
           const averageRperKm = inc.total / inc.totalDistance;
 
-          // Monta a linha de detalhes para cada plataforma
-          const detailsLine = `_${
-            inc.count
-          } corridas | ${inc.totalDistance.toFixed(
-            1
-          )} km | R$ ${averageRperKm.toFixed(2)} por km_`;
+          const detailsLine = `_${inc.count} ${incomeTermPlural} | ${inc.totalDistance.toFixed(1)} km | R$ ${averageRperKm.toFixed(2)} por km_`;
 
           message += `\n*${inc._id}: R$ ${inc.total.toFixed(
             2
@@ -670,7 +636,8 @@ router.post("/", async (req, res) => {
         });
 
         message += `\n*Total Recebido:* R$ ${totalIncome.toFixed(2)}`;
-        message += `\n\n_Digite "detalhes receitas" para ver a lista completa._`;
+        message += `\n\n_Digite "detalhes ${incomeTermPlural}" para ver a lista completa._`;
+
 
         conversationState[userId] = {
           type: "income",
