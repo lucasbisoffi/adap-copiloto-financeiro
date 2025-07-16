@@ -257,7 +257,7 @@ router.post("/", async (req, res) => {
             }
             sendOrLogMessage(
               twiml,
-              `${config.emoji} Prontinho! Su${config.artigoDefinido} *${currentState.brand} ${currentState.model}* foi cadastrad${config.artigoDefinido} com sucesso.`
+              `${config.emoji} Prontinho! ${config.pronomePossessivo.charAt(0).toUpperCase() + config.pronomePossessivo.slice(1)} *${currentState.brand} ${currentState.model}* foi cadastrado com sucesso.`
             );
             delete conversationState[userId];
           } else {
@@ -374,7 +374,7 @@ router.post("/", async (req, res) => {
         
         sendOrLogMessage(
           twiml,
-          `✅ Perfil de ${config.name} adicionado! Para finalizar, vamos cadastrar su${config.artigoDefinido} ${config.vehicleName}.\n\nQual a *marca* dela?`
+          `✅ Perfil de ${config.name} adicionado! Para finalizar, vamos cadastrar ${config.pronomePossessivo} ${config.vehicleName}.\n\nQual a marca ${config.generoObjeto}?`
         );
         break;
       }

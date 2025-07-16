@@ -13,9 +13,10 @@ export const PROFILE_CONFIG = {
     expenseExample: '45 na troca de óleo',
     vehicleName: 'carro',
     // >> NOVAS VARIÁVEIS DE GÊNERO <<
-    artigoDefinido: 'o', // o carro
-    artigoIndefinido: 'um', // um carro
-    pronomePossessivo: 'seu', // seu carro
+    artigoDefinido: 'o',      // "o" carro
+    artigoIndefinido: 'um',   // "um" carro
+    pronomePossessivo: 'seu', // "seu" carro
+    generoObjeto: 'dele',     // "marca dele"
     incomeCategories: ['Corrida', 'Gorjeta', 'Bônus', 'Outros'],
     expenseCategories: [
       'Combustível',
@@ -43,9 +44,10 @@ export const PROFILE_CONFIG = {
     expenseExample: '50 na relação da moto',
     vehicleName: 'moto',
     // >> NOVAS VARIÁVEIS DE GÊNERO <<
-    artigoDefinido: 'a', // a moto
-    artigoIndefinido: 'uma', // uma moto
-    pronomePossessivo: 'sua', // sua moto
+    artigoDefinido: 'a',      // "a" moto
+    artigoIndefinido: 'uma',   // "uma" moto
+    pronomePossessivo: 'sua', // "sua" moto
+    generoObjeto: 'dela',     // "marca dela"
     incomeCategories: ['Entrega', 'Gorjeta', 'Bônus', 'Outros'],
     expenseCategories: [
       'Manutenção da Moto',
