@@ -140,7 +140,7 @@ export async function interpretDriverMessage(message, currentDate) {
          "profile": "string ('driver' ou 'motoboy')",
          "period": "string ('today', 'week')",
          "days": number,
-         "month": "string (YYYY-MM)",
+         "month": "string (MM)",
          "monthName": "string",
          "date": "string (ISO 8601)",
          "type": "string"
@@ -166,10 +166,12 @@ export async function interpretDriverMessage(message, currentDate) {
     Response: { "intent": "get_period_report", "data": { "period": "today" } }
   - User: "resumo da semana"
     Response: { "intent": "get_period_report", "data": { "period": "week" } }
-  - User: "resumo do mês" // <-- IA deve entender como o mês corrente
-    Response: { "intent": "get_period_report", "data": { "month": "${currentYear}-${currentMonth}", "monthName": "${monthName}" } }
-  - User: "qual foi meu lucro em janeiro?" // <-- AGORA USA A NOVA INTENÇÃO
-    Response: { "intent": "get_period_report", "data": { "month": "${currentYear}-01", "monthName": "Janeiro" } }
+  - User: "resumo do mês" 
+    Response: { "intent": "get_period_report", "data": { "period": "month" } }
+  - User: "qual foi meu lucro em janeiro?" 
+    Response: { "intent": "get_period_report", "data": { "month": "01", "monthName": "Janeiro" } }
+  - User: "resumo de junho"
+    Response: { "intent": "get_period_report", "data": { "month": "06", "monthName": "Junho" } }
 
   - User: "gasto total"
     Response: { "intent": "get_expenses_by_category", "data": {} }
@@ -351,7 +353,7 @@ export async function interpretMotoboyMessage(message, currentDate) {
          "profile": "string ('driver' ou 'motoboy')",
          "period": "string ('today', 'week')",
          "days": number,
-         "month": "string (YYYY-MM)",
+         "month": "string (MM)",
          "monthName": "string",
          "date": "string (ISO 8601)",
          "type": "string"
@@ -369,6 +371,30 @@ export async function interpretMotoboyMessage(message, currentDate) {
     Response: { "intent": "switch_profile", "data": { "profile": "driver" } }
   - User: "quero adicionar perfil de motorista"
     Response: { "intent": "add_profile", "data": { "profile": "driver" } }
+
+
+
+  - User: "resumo da semana"
+    Response: { "intent": "get_period_report", "data": { "period": "week" } }
+  - User: "resumo do mês" 
+    Response: { "intent": "get_period_report", "data": { "period": "month" } }
+  - User: "qual foi meu lucro em janeiro?" 
+    Response: { "intent": "get_period_report", "data": { "month": "01", "monthName": "Janeiro" } }
+  - User: "resumo de junho"
+    Response: { "intent": "get_period_report", "data": { "month": "06", "monthName": "Junho" } }
+
+  - User: "meus ganhos"
+    Response: { "intent": "get_incomes_by_source", "data": {} }
+  - User: "ver meus gastos"
+    Response: { "intent": "get_expenses_by_category", "data": {} }
+  - User: "gráfico das plataformas"
+    Response: { "intent": "generate_platform_chart", "data": {} }
+  - User: "ver detalhes"
+    Response: { "intent": "get_transaction_details", "data": {} }
+  - User: "quanto gastei de gasolina em junho?"
+    Response: { "intent": "get_expenses_by_category", "data": { "category": "Combustível", "month": "${currentYear}-06", "monthName": "Junho" } }
+  - User: "quanto fiz no ifood em maio?"
+  Response: { "intent": "get_incomes_by_source", "data": { "source": "iFood", "month": "${currentYear}-05", "monthName": "Maio" } }    
 
   - User: "me lembre hoje daqui 5 minutos de realizar ajustes no copiloto"
     Response: { "intent": "add_reminder", "data": { "description": "realizar ajustes no copiloto", "relativeMinutes": 5, "type": "Outro" } }
@@ -407,9 +433,9 @@ export async function interpretMotoboyMessage(message, currentDate) {
   - User: "quero adicionar perfil de motoboy"
     Response: { "intent": "add_profile", "data": { "profile": "motoboy" } }
   
-  - User: "minha moto" // <-- NOVO EXEMPLO
+  - User: "minha moto"
     Response: { "intent": "get_motorcycle_details", "data": {} }
-  - User: "dados da minha moto" // <-- NOVO EXEMPLO
+  - User: "dados da minha moto"
     Response: { "intent": "get_motorcycle_details", "data": {} }
 
   Agora, interprete esta mensagem: "${message}"

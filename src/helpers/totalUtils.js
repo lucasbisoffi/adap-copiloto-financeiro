@@ -256,53 +256,51 @@ export async function getProfitReportData(userId, days, activeProfile) {
   return combinedData;
 }
 
-export async function getPeriodReport(userId, { period, month, activeProfile }) {
+export async function getPeriodReport(userId, { period, month, monthName, activeProfile }) {
   const now = new Date();
   let startDate, endDate, title;
 
   if (month) {
-    const [year, monthNumber] = month.split('-').map(Number);
-    startDate = new Date(year, monthNumber - 1, 1);
-    endDate = new Date(year, monthNumber, 0, 23, 59, 59);
-    title = startDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
-    title = title.charAt(0).toUpperCase() + title.slice(1);
+    const year = now.getFullYear();
+    const monthNumber = parseInt(month, 10);
+
+    startDate = new Date(Date.UTC(year, monthNumber - 1, 1));
+    endDate = new Date(Date.UTC(year, monthNumber, 0, 23, 59, 59));
+    
+    const monthNameCapitalized = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+    title = `${monthNameCapitalized} de ${year}`;
     
   } else {
     endDate = new Date(now);
     switch (period) {
       case 'today':
-        startDate = new Date(now.setHours(0, 0, 0, 0));
-        endDate.setHours(23, 59, 59, 999);
+        startDate = new Date(new Date().setHours(0, 0, 0, 0));
         title = 'de Hoje';
+        break;
+      case 'month':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        title = now.toLocaleString('pt-BR', { month: 'long' });
+        title = 'de ' + title.charAt(0).toUpperCase() + title.slice(1);
         break;
       case 'week':
       default:
-        startDate = new Date(now.setDate(now.getDate() - 7));
+        startDate = new Date(new Date().setDate(now.getDate() - 7));
         startDate.setHours(0, 0, 0, 0);
         title = 'da Última Semana';
         break;
     }
   }
-
+  
   const matchStage = { userId, profileType: activeProfile, date: { $gte: startDate, $lte: endDate } };
 
   const incomePromise = Income.aggregate([
     { $match: matchStage },
-    { $group: { 
-        _id: null, 
-        total: { $sum: "$amount" },
-        count: { $sum: 1 },
-        totalDistance: { $sum: "$distance" }
-    }}
+    { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 }, totalDistance: { $sum: "$distance" } } }
   ]);
 
   const expensePromise = Expense.aggregate([
     { $match: matchStage },
-    { $group: { 
-        _id: null, 
-        total: { $sum: "$amount" },
-        count: { $sum: 1 }
-    }}
+    { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
   ]);
 
   const [incomeResult, expenseResult] = await Promise.all([incomePromise, expensePromise]);
@@ -311,7 +309,7 @@ export async function getPeriodReport(userId, { period, month, activeProfile }) 
   const expenseData = expenseResult[0] || { total: 0, count: 0 };
 
   return {
-    title: title, // Passamos um título dinâmico para a mensagem
+    title: title,
     totalIncome: incomeData.total,
     incomeCount: incomeData.count,
     totalDistance: incomeData.totalDistance,

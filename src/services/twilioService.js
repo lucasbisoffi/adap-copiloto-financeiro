@@ -20,7 +20,6 @@ export async function sendReportImage(userId, imageUrl, caption) {
 
 export async function sendTemplatedMessage(to, contentSid, contentVariables) {
   
-  // Verificação de segurança: não prosseguir se o ID do template não for fornecido.
   if (!contentSid) {
     console.error(`❌ Falha ao enviar mensagem: O ID do template (contentSid) não foi fornecido.`);
     throw new Error('O ID do template (contentSid) é obrigatório.');
@@ -42,6 +41,14 @@ export async function sendTemplatedMessage(to, contentSid, contentVariables) {
 }
 
 export async function sendTextMessage(to, body) {
+  if (process.env.NODE_ENV !== 'prod') {
+    console.log('--- MODO TESTE (Mensagem Assíncrona) ---');
+    devLog(`Destinatário: ${to}`);
+    devLog(`Corpo: ${body}`);
+    console.log('-----------------------------------------');
+    return;
+  }
+  
   try {
     devLog(`Enviando mensagem de texto para ${to}...`);
     await client.messages.create({
@@ -52,7 +59,5 @@ export async function sendTextMessage(to, body) {
     devLog(`✅ Mensagem de texto enviada com sucesso para ${to}.`);
   } catch (error) {
     devLog(`❌ Falha ao enviar mensagem de texto para ${to}: ${error.message}`);
-    // Não lançamos o erro para não quebrar o fluxo principal se um chunk falhar.
-    // Em um sistema de produção, poderíamos adicionar um sistema de retry aqui.
   }
 }

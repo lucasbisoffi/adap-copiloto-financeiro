@@ -1,15 +1,16 @@
-// scripts/migrate_to_profiles.js
+import dotenv from 'dotenv';
+dotenv.config();
 
 import mongoose from 'mongoose';
 import UserStats from '../src/models/UserStats.js';
 import Income from '../src/models/Income.js';
 import Expense from '../src/models/Expense.js';
-import connectDB from '../src/config/database.js'; // Ajuste o caminho se necessário
+import { connectToDatabase } from '../src/config/database.js';
 
 const migrate = async () => {
   console.log('Iniciando migração de dados para a estrutura de múltiplos perfis...');
   
-  await connectDB(); // Conecta ao banco de dados
+  await connectToDatabase(); // Conecta ao banco de dados
 
   // 1. Migrar Usuários existentes para o perfil 'driver'
   const userUpdateResult = await UserStats.updateMany(

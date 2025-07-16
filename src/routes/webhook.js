@@ -13,6 +13,7 @@ import Income from "../models/Income.js";
 import UserStats from "../models/UserStats.js";
 import Reminder from "../models/Reminder.js";
 import Vehicle from "../models/Vehicle.js";
+import Motorcycle from "../models/Motorcycle.js";
 import {
   interpretDriverMessage,
   interpretMotoboyMessage,
@@ -49,9 +50,8 @@ let conversationState = {};
 router.post("/", async (req, res) => {
   const twiml = new twilio.twiml.MessagingResponse();
   const userId = req.body.From;
-  let responseSent = false; // Flag para controlar o envio da resposta
+  let responseSent = false;
 
-  // Função helper para finalizar a requisição HTTP
   const finalizeResponse = () => {
     if (!responseSent) {
       res.writeHead(200, { "Content-Type": "text/xml" });
@@ -62,60 +62,47 @@ router.post("/", async (req, res) => {
 
   try {
     let messageToProcess;
-
     if (req.body.MediaUrl0 && req.body.MediaContentType0.includes("audio")) {
-      const audioUrl = req.body.MediaUrl0;
-      devLog(`Áudio detectado. URL: ${audioUrl}`);
-      messageToProcess = await transcribeAudioWithWhisper(audioUrl);
-      devLog(`Texto transcrito: "${messageToProcess}"`);
+      messageToProcess = await transcribeAudioWithWhisper(req.body.MediaUrl0);
     } else {
       messageToProcess = req.body.Body;
     }
 
     if (!messageToProcess || messageToProcess.trim() === "") {
-      devLog("Mensagem vazia, nenhuma ação a ser tomada.");
-      res.writeHead(200, { "Content-Type": "text/xml" });
       return res.end(twiml.toString());
     }
-
     devLog(`Mensagem de ${userId} para processar: "${messageToProcess}"`);
 
+    // --- ESTRUTURA LÓGICA CORRETA ---
+
+    // 1. LÓGICA PARA CANCELAR (SEMPRE A PRIORIDADE MÁXIMA)
     const currentState = conversationState[userId];
-    if (
-      messageToProcess &&
-      ["cancelar", "parar", "sair"].includes(
-        messageToProcess.toLowerCase().trim()
-      )
-    ) {
+    if (messageToProcess.toLowerCase().trim() === "cancelar") {
       if (currentState) {
         delete conversationState[userId];
         sendOrLogMessage(twiml, "Ok, operação cancelada. 👍");
-        devLog(`Fluxo cancelado pelo usuário: ${userId}`);
       } else {
         sendOrLogMessage(
           twiml,
-          "Não há nenhuma operação em andamento para cancelar. Como posso ajudar?"
+          "Não há nenhuma operação em andamento para cancelar."
         );
       }
-      res.writeHead(200, { "Content-Type": "text/xml" });
-      return res.end(twiml.toString());
+      return finalizeResponse();
     }
 
-    //novo
-    if (currentState && (currentState.flow === "vehicle_registration" || currentState.flow === "motorcycle_registration")) {
+    // 2. LÓGICA PARA FLUXOS DE CONVERSAÇÃO ATIVOS
+    if (
+      currentState &&
+      (currentState.flow === "vehicle_registration" ||
+        currentState.flow === "motorcycle_registration")
+    ) {
       const isMotorcycle = currentState.flow === "motorcycle_registration";
       const vehicleType = isMotorcycle ? "moto" : "carro";
       const vehicleEmoji = isMotorcycle ? "🏍️" : "🚗";
-      
-      devLog(`Fluxo de Cadastro de ${vehicleType} - Passo: ${currentState.step}`);
 
-      // Validação de áudio permanece a mesma
-      if (req.body.MediaUrl0 && req.body.MediaContentType0.includes("audio")) {
-        sendOrLogMessage(twiml, `✋ Para garantir a precisão dos dados, o cadastro da sua ${vehicleType} deve ser feito *apenas por texto*.\n\nPor favor, digite sua resposta.`);
-        finalizeResponse();
-        return;
-      }
-
+      devLog(
+        `Fluxo de Cadastro de ${vehicleType} - Passo: ${currentState.step}`
+      );
       const flowMessage = messageToProcess.trim();
       const isConfirmation = ["sim", "s"].includes(flowMessage.toLowerCase());
 
@@ -123,45 +110,61 @@ router.post("/", async (req, res) => {
         case "awaiting_brand":
           currentState.tempData = flowMessage;
           currentState.step = "confirming_brand";
-          sendOrLogMessage(twiml, `Você digitou: "*${flowMessage}*"\n\nEstá correto? Responda "*sim*" para confirmar, ou envie a marca novamente.`);
+          sendOrLogMessage(
+            twiml,
+            `Você digitou: "*${flowMessage}*"\n\nEstá correto? Responda "*sim*" para confirmar, ou envie a marca novamente.`
+          );
           break;
-
         case "confirming_brand":
           if (isConfirmation) {
             currentState.brand = currentState.tempData;
             delete currentState.tempData;
             currentState.step = "awaiting_model";
-            const modelExample = isMotorcycle ? "(Ex: CG 160, Fazer 250)" : "(Ex: Onix, Argo)";
-            sendOrLogMessage(twiml, `✅ Marca confirmada!\n\nAgora, qual o *modelo* da sua ${vehicleType}? ${modelExample}`);
+            const modelExample = isMotorcycle
+              ? "(Ex: CG 160, Fazer 250)"
+              : "(Ex: Onix, Argo)";
+            sendOrLogMessage(
+              twiml,
+              `✅ Marca confirmada!\n\nAgora, qual o *modelo* da sua ${vehicleType}? ${modelExample}`
+            );
           } else {
             currentState.tempData = flowMessage;
-            sendOrLogMessage(twiml, `Ok, entendi: "*${flowMessage}*"\n\nCorreto? (Responda "*sim*" ou envie novamente)`);
+            sendOrLogMessage(
+              twiml,
+              `Ok, entendi: "*${flowMessage}*"\n\nCorreto? (Responda "*sim*" ou envie novamente)`
+            );
           }
           break;
-
         case "awaiting_model":
           currentState.tempData = flowMessage;
           currentState.step = "confirming_model";
-          sendOrLogMessage(twiml, `Modelo: "*${flowMessage}*"\n\nEstá correto? (Responda "*sim*" ou envie novamente)`);
+          sendOrLogMessage(
+            twiml,
+            `Modelo: "*${flowMessage}*"\n\nEstá correto? (Responda "*sim*" ou envie novamente)`
+          );
           break;
-
         case "confirming_model":
           if (isConfirmation) {
             currentState.model = currentState.tempData;
             delete currentState.tempData;
             currentState.step = "awaiting_year";
-            sendOrLogMessage(twiml, `✅ Modelo confirmado!\n\nQual o *ano* da sua ${vehicleType}? (Ex: 2022)`);
+            sendOrLogMessage(
+              twiml,
+              `✅ Modelo confirmado!\n\nQual o *ano* da sua ${vehicleType}? (Ex: 2022)`
+            );
           } else {
             currentState.tempData = flowMessage;
-            sendOrLogMessage(twiml, `Ok, entendi: "*${flowMessage}*"\n\nCorreto? (Responda "*sim*" ou envie novamente)`);
+            sendOrLogMessage(
+              twiml,
+              `Ok, entendi: "*${flowMessage}*"\n\nCorreto? (Responda "*sim*" ou envie novamente)`
+            );
           }
           break;
-        
         case "awaiting_year":
           const currentYear = new Date().getFullYear();
           const inputYear = parseInt(flowMessage);
           if (
-            isNaN(parseInt(flowMessage)) ||
+            isNaN(inputYear) ||
             flowMessage.length !== 4 ||
             inputYear > currentYear + 1
           ) {
@@ -174,11 +177,10 @@ router.post("/", async (req, res) => {
             currentState.step = "confirming_year";
             sendOrLogMessage(
               twiml,
-              `Ano: *${vehicleFlowMessage}*\n\nEstá correto? (Responda "*sim*" ou envie novamente)`
+              `Ano: *${flowMessage}*\n\nEstá correto? (Responda "*sim*" ou envie novamente)`
             );
           }
           break;
-
         case "confirming_year":
           if (isConfirmation) {
             currentState.year = parseInt(currentState.tempData);
@@ -189,28 +191,15 @@ router.post("/", async (req, res) => {
               "✅ Ano confirmado!\n\nPara finalizar, qual a *quilometragem (KM)* atual do painel?"
             );
           } else {
-            const currentYear = new Date().getFullYear();
-            const inputYear = parseInt(vehicleFlowMessage);
-            if (
-              isNaN(parseInt(vehicleFlowMessage)) ||
-              vehicleFlowMessage.length !== 4
-            ) {
-              sendOrLogMessage(
-                twiml,
-                "Este ano também parece inválido. Por favor, envie o ano com 4 dígitos (ex: 2021)."
-              );
-            } else {
-              currentState.tempData = vehicleFlowMessage;
-              sendOrLogMessage(
-                twiml,
-                `Ok, entendi: *${vehicleFlowMessage}*\n\nCorreto? (Responda "*sim*" ou envie novamente)`
-              );
-            }
+            currentState.tempData = flowMessage; // Assume a nova mensagem como a correção
+            sendOrLogMessage(
+              twiml,
+              `Ok, entendi: *${flowMessage}*\n\nCorreto? (Responda "*sim*" ou envie novamente)`
+            );
           }
           break;
-        
         case "awaiting_mileage":
-          const mileage = vehicleFlowMessage.replace(/\D/g, "");
+          const mileage = flowMessage.replace(/\D/g, "");
           if (isNaN(parseInt(mileage))) {
             sendOrLogMessage(
               twiml,
@@ -225,13 +214,10 @@ router.post("/", async (req, res) => {
             );
           }
           break;
-        
         case "confirming_mileage":
           if (isConfirmation) {
             currentState.mileage = currentState.tempData;
-
             if (isMotorcycle) {
-              // Salva uma MOTO
               const newMotorcycle = new Motorcycle({
                 userId,
                 brand: currentState.brand,
@@ -243,10 +229,14 @@ router.post("/", async (req, res) => {
               await newMotorcycle.save();
               await UserStats.findOneAndUpdate(
                 { userId },
-                { $set: { activeMotorcycleId: newMotorcycle._id } }
+                {
+                  $set: {
+                    activeMotorcycleId: newMotorcycle._id,
+                    activeProfile: "motoboy",
+                  },
+                }
               );
             } else {
-              // Salva um CARRO
               const newVehicle = new Vehicle({
                 userId,
                 brand: currentState.brand,
@@ -258,93 +248,86 @@ router.post("/", async (req, res) => {
               await newVehicle.save();
               await UserStats.findOneAndUpdate(
                 { userId },
-                { $set: { activeVehicleId: newVehicle._id } }
+                {
+                  $set: {
+                    activeVehicleId: newVehicle._id,
+                    activeProfile: "driver",
+                  },
+                }
               );
             }
-
-            sendOrLogMessage(twiml, `${vehicleEmoji} Prontinho! Sua *${currentState.brand} ${currentState.model}* foi cadastrada com sucesso.`);
+            sendOrLogMessage(
+              twiml,
+              `${vehicleEmoji} Prontinho! Sua *${currentState.brand} ${currentState.model}* foi cadastrada com sucesso.`
+            );
             delete conversationState[userId];
-
           } else {
-            // A lógica de "else" para reconfirmar a quilometragem é a mesma
             const newMileage = flowMessage.replace(/\D/g, "");
             if (isNaN(parseInt(newMileage))) {
-              sendOrLogMessage(twiml, "Este valor também parece inválido. Por favor, envie apenas os números (ex: 85000).");
+              sendOrLogMessage(
+                twiml,
+                "Este valor também parece inválido. Por favor, envie apenas os números (ex: 85000)."
+              );
             } else {
               currentState.tempData = parseInt(newMileage);
-              sendOrLogMessage(twiml, `Ok, entendi: *${newMileage} KM*\n\nCorreto? (Responda "*sim*" para finalizar)`);
+              sendOrLogMessage(
+                twiml,
+                `Ok, entendi: *${newMileage} KM*\n\nCorreto? (Responda "*sim*" para finalizar)`
+              );
             }
           }
           break;
-        
-        default:
-          sendOrLogMessage(
-            twiml,
-            "Hmm, não entendi sua resposta. Você está no meio do cadastro do veículo. Digite 'cancelar' para sair ou responda à última pergunta."
-          );
-          break;
       }
-      res.writeHead(200, { "Content-Type": "text/xml" });
-      return res.end(twiml.toString());
+      return finalizeResponse();
     }
 
+    // 3. A PARTIR DAQUI, SABEMOS QUE NÃO ESTAMOS EM UM FLUXO DE CONVERSA.
     let userStats = await UserStats.findOne({ userId });
 
-    if (userStats?.blocked) {
-      sendOrLogMessage(twiml, "🚫 Você está bloqueado de usar a ADAP.");
-      res.writeHead(200, { "Content-Type": "text/xml" });
-      return res.end(twiml.toString());
-    }
-
-    // =================== INÍCIO DO NOVO BLOCO DE ONBOARDING ===================
-    // Cenário 1: Usuário completamente novo, nunca interagiu com o bot.
+    // 4. LÓGICA DE ONBOARDING PARA NOVOS USUÁRIOS
     if (!userStats) {
-      conversationState[userId] = { flow: 'onboarding_v2' };
-      const welcomeMsg = "👋 Bem-vindo(a) ao ADAP! Para começar, me diga sua principal ferramenta de trabalho:\n\n*1* - Carro 🚗 (Motorista)\n*2* - Moto 🏍️ (Entregador)";
-      sendOrLogMessage(twiml, welcomeMsg);
-      finalizeResponse();
-      return; // Encerra o fluxo aqui, aguardando a resposta do usuário.
+      const choice = messageToProcess.trim();
+      if (choice === "1" || choice === "2") {
+        const profileType = choice === "1" ? "driver" : "motoboy";
+        userStats = await UserStats.create({
+          userId,
+          profiles: { [profileType]: true },
+          activeProfile: profileType,
+          welcomedToV2: true,
+        });
+        const flow =
+          profileType === "driver"
+            ? "vehicle_registration"
+            : "motorcycle_registration";
+        const vehicleName = profileType === "driver" ? "carro" : "moto";
+        conversationState[userId] = { flow, step: "awaiting_brand" };
+        sendOrLogMessage(
+          twiml,
+          `✅ Perfil criado! Para finalizar, vamos cadastrar sua ${vehicleName}.\n\nQual a *marca*?`
+        );
+      } else {
+        const welcomeMsg =
+          "👋 Bem-vindo(a) ao ADAP! Para começar, me diga sua principal ferramenta de trabalho:\n\n*1* - Carro 🚗 (Motorista)\n*2* - Moto 🏍️ (Entregador)";
+        sendOrLogMessage(twiml, welcomeMsg);
+      }
+      return finalizeResponse();
     }
 
-    // Gerenciador do fluxo de onboarding: processa a resposta "1" ou "2".
-    if (conversationState[userId]?.flow === 'onboarding_v2') {
-        const choice = messageToProcess.trim();
-        let profileType = choice === '1' ? 'driver' : (choice === '2' ? 'motoboy' : null);
-
-        if (profileType) {
-            userStats = await UserStats.create({
-                userId,
-                profiles: { [profileType]: true, [profileType === 'driver' ? 'motoboy' : 'driver']: false },
-                activeProfile: profileType,
-                welcomedToV2: true, // Já viu as boas-vindas ao se cadastrar.
-            });
-            delete conversationState[userId];
-
-            // Envia a mensagem de ajuda personalizada para o perfil criado.
-            sendHelpMessage(twiml, profileType); // Você precisará adaptar a sendHelpMessage para aceitar o perfil
-        } else {
-            sendOrLogMessage(twiml, "Opção inválida. Por favor, responda apenas com o número *1* para Carro ou *2* para Moto.");
-        }
-        finalizeResponse();
-        return; // Encerra o fluxo aqui.
-    }
-
-    // Cenário 2: Usuário antigo que precisa ver a mensagem de boas-vindas da V2
+    // 5. LÓGICA DE BOAS-VINDAS V2 PARA USUÁRIOS ANTIGOS
     if (!userStats.welcomedToV2) {
-        const updateMessage = "🎉 *Novidade no ADAP!* 🎉\n\nAgora o seu copiloto também ajuda *entregadores de moto*!\n\nVocê pode adicionar um perfil de motoboy, ou trocar entre seus perfis a qualquer momento. Experimente dizer:\n\n› _\"adicionar perfil de moto\"_\n› _\"mudar para moto\"_";
-        sendOrLogMessage(twiml, updateMessage);
-        userStats.welcomedToV2 = true;
-        await userStats.save();
-        // Não usamos 'return' aqui para que a mensagem original dele seja processada logo em seguida.
+      const updateMessage =
+        '🎉 *Novidade no ADAP!* 🎉\n\nAgora o seu copiloto também ajuda *entregadores de moto*!\n\nVocê pode adicionar um perfil de motoboy, ou trocar entre seus perfis a qualquer momento. Experimente dizer:\n\n› _"adicionar perfil de moto"_\n› _"mudar para moto"_';
+      sendOrLogMessage(twiml, updateMessage);
+      userStats.welcomedToV2 = true;
+      await userStats.save();
     }
-    // =================== FIM DO BLOCO DE ONBOARDING ===================
 
+    // 6. LÓGICA PRINCIPAL (IA E SWITCH DE INTENÇÕES)
     const generateId = customAlphabet("1234567890abcdef", 5);
     const todayISO = new Date().toISOString();
-
     let interpretation;
 
-    if (userStats && userStats.activeProfile === "motoboy") {
+    if (userStats.activeProfile === "motoboy") {
       interpretation = await interpretMotoboyMessage(
         messageToProcess,
         todayISO
@@ -353,90 +336,89 @@ router.post("/", async (req, res) => {
       interpretation = await interpretDriverMessage(messageToProcess, todayISO);
     }
     devLog(
-      `Intenção da IA para perfil '${userStats?.activeProfile || "driver"}':`,
+      `Intenção da IA para perfil '${userStats.activeProfile}':`,
       interpretation.intent
     );
 
     switch (interpretation.intent) {
-      
       case "switch_profile": {
-        const { profile } = interpretation.data; // A IA nos dará 'driver' ou 'motoboy'
-        
-        // A variável 'userStats' já foi buscada no início do webhook.
+        const { profile } = interpretation.data;
         if (userStats.profiles[profile]) {
           userStats.activeProfile = profile;
           await userStats.save();
-          const profileName = profile === 'driver' ? 'Motorista 🚗' : 'Entregador 🏍️';
-          sendOrLogMessage(twiml, `✅ Perfil alterado para *${profileName}*! Seus próximos lançamentos e relatórios serão para este perfil.`);
+          const profileName =
+            profile === "driver" ? "Motorista 🚗" : "Entregador 🏍️";
+          sendOrLogMessage(twiml, `✅ Perfil alterado para *${profileName}*!`);
         } else {
-          // O usuário tentou mudar para um perfil que não tem.
-          const profileName = profile === 'driver' ? 'Motorista' : 'Entregador';
-          sendOrLogMessage(twiml, `Você ainda não tem um perfil de ${profileName}. Diga *"adicionar perfil de ${profileName.toLowerCase()}"* para criar um.`);
+          const profileName = profile === "driver" ? "Motorista" : "Entregador";
+          sendOrLogMessage(
+            twiml,
+            `Você ainda não tem um perfil de ${profileName}. Diga *"adicionar perfil de ${profileName.toLowerCase()}"* para criar um.`
+          );
         }
         break;
       }
       case "add_profile": {
         const { profile } = interpretation.data;
-        
         if (userStats.profiles[profile]) {
           sendOrLogMessage(twiml, "Você já tem este perfil!");
           break;
         }
-
-        if (profile === 'driver') {
-          userStats.profiles.driver = true;
-          await userStats.save();
-          // Inicia o fluxo de cadastro de VEÍCULO
-          conversationState[userId] = { flow: 'vehicle_registration', step: 'awaiting_brand' };
-          sendOrLogMessage(twiml, "🚗 Ótimo! Para ativar seu perfil de motorista, vamos cadastrar seu carro.\n\nQual a *marca* do veículo?");
-        
-        } else { // profile === 'motoboy'
-          userStats.profiles.motoboy = true;
-          await userStats.save();
-          // Inicia o fluxo de cadastro de MOTO
-          conversationState[userId] = { flow: 'motorcycle_registration', step: 'awaiting_brand' };
-          sendOrLogMessage(twiml, "🏍️ Perfil de Entregador adicionado! Para finalizar, vamos cadastrar sua moto.\n\nQual a *marca* dela?");
-        }
+        await UserStats.updateOne(
+          { userId },
+          { $set: { [`profiles.${profile}`]: true } }
+        );
+        const flow =
+          profile === "driver"
+            ? "vehicle_registration"
+            : "motorcycle_registration";
+        const vehicleName = profile === "driver" ? "carro" : "moto";
+        conversationState[userId] = { flow, step: "awaiting_brand" };
+        sendOrLogMessage(
+          twiml,
+          `✅ Perfil de ${
+            profile === "driver" ? "Motorista" : "Entregador"
+          } adicionado! Para finalizar, vamos cadastrar sua ${vehicleName}.\n\nQual a *marca* dela?`
+        );
         break;
       }
       case "get_vehicle_details": {
-        const userStats = await UserStats.findOne({ userId }).populate(
-          "activeVehicleId"
-        );
-
-        if (!userStats || !userStats.activeVehicleId) {
+        if (!userStats.activeVehicleId) {
           sendOrLogMessage(
             twiml,
-            "🚗 Você ainda não cadastrou um veículo. Digite *'cadastrar carro'* para começar."
+            "🚗 Você ainda não cadastrou um veículo. Use o comando 'adicionar perfil de motorista'."
           );
           break;
         }
-
-        const vehicle = userStats.activeVehicleId;
+        const vehicle = await Vehicle.findById(userStats.activeVehicleId);
         const vehicleMessage = `*Seu Veículo Ativo* 🚙\n\n*Marca:* ${
           vehicle.brand
         }\n*Modelo:* ${vehicle.model}\n*Ano:* ${
           vehicle.year
         }\n*KM Atual:* ${vehicle.currentMileage.toLocaleString("pt-BR")} km`;
-
         sendOrLogMessage(twiml, vehicleMessage);
         break;
       }
       case "get_motorcycle_details": {
-        // Usamos populate para buscar os dados da moto referenciada
-        const userWithMoto = await UserStats.findOne({ userId }).populate('activeMotorcycleId');
-
-        if (!userWithMoto || !userWithMoto.activeMotorcycleId) {
-          sendOrLogMessage(twiml, "🏍️ Você ainda não cadastrou uma moto. Diga *'adicionar perfil de moto'* para começar.");
+        if (!userStats.activeMotorcycleId) {
+          sendOrLogMessage(
+            twiml,
+            "🏍️ Você ainda não cadastrou uma moto. Use o comando 'adicionar perfil de moto'."
+          );
           break;
         }
-
-        const motorcycle = userWithMoto.activeMotorcycleId;
-        const motorcycleMessage = `*Sua Moto Ativa* 🏍️\n\n*Marca:* ${motorcycle.brand}\n*Modelo:* ${motorcycle.model}\n*Ano:* ${motorcycle.year}\n*KM Atual:* ${motorcycle.currentMileage.toLocaleString("pt-BR")} km`;
-        
+        const motorcycle = await Motorcycle.findById(
+          userStats.activeMotorcycleId
+        );
+        const motorcycleMessage = `*Sua Moto Ativa* 🏍️\n\n*Marca:* ${
+          motorcycle.brand
+        }\n*Modelo:* ${motorcycle.model}\n*Ano:* ${
+          motorcycle.year
+        }\n*KM Atual:* ${motorcycle.currentMileage.toLocaleString("pt-BR")} km`;
         sendOrLogMessage(twiml, motorcycleMessage);
         break;
       }
+
       case "add_income": {
         const { amount, description, category, source, tax, distance } =
           interpretation.data;
@@ -499,16 +481,25 @@ router.post("/", async (req, res) => {
         break;
       }
       case "get_period_report": {
-        const { period, month } = interpretation.data;
+        const { period, month, monthName } = interpretation.data;
 
-        let reportData;
+        const reportOptions = {
+          period,
+          month,
+          monthName,
+          activeProfile: userStats.activeProfile,
+        };
+
+        // Se a IA não der um período, o padrão é 'week'
         if (!period && !month) {
-          reportData = await getPeriodReport(userId, { period: "week", activeProfile: userStats.activeProfile });
-        } else {
-          reportData = await getPeriodReport(userId, { period, month, activeProfile: userStats.activeProfile });
+          reportOptions.period = "week";
         }
 
+        const reportData = await getPeriodReport(userId, reportOptions);
+
+        // CORREÇÃO: Adicione 'userStats.activeProfile' como o terceiro argumento
         sendPeriodReportMessage(twiml, reportData, userStats.activeProfile);
+
         break;
       }
       case "generate_platform_chart": {
@@ -529,11 +520,11 @@ router.post("/", async (req, res) => {
             `Buscando dados para o gráfico de plataformas do mês: ${currentMonth}`
           );
           const reportData = await getIncomesBySource(
-                userId, 
-                currentMonth, 
-                null, // `source` é null para pegar todas
-                userStats.activeProfile // <-- ADICIONE ESTE PARÂMETRO
-            );
+            userId,
+            currentMonth,
+            null, // `source` é null para pegar todas
+            userStats.activeProfile // <-- ADICIONE ESTE PARÂMETRO
+          );
 
           if (reportData.length === 0) {
             await sendChunkedMessage(
@@ -581,7 +572,12 @@ router.post("/", async (req, res) => {
             category || "Todas"
           }`
         );
-        const expenses = await getExpensesByCategory(userId, month, category, userStats.activeProfile);
+        const expenses = await getExpensesByCategory(
+          userId,
+          month,
+          category,
+          userStats.activeProfile
+        );
         if (expenses.length === 0) {
           sendOrLogMessage(
             twiml,
@@ -610,6 +606,7 @@ router.post("/", async (req, res) => {
           month,
           monthName,
           category,
+          activeProfile: userStats.activeProfile,
         };
         sendOrLogMessage(twiml, message);
         break;
@@ -634,7 +631,12 @@ router.post("/", async (req, res) => {
           }`
         );
         // A função agora retorna os dados com contagem e distância!
-        const incomes = await getIncomesBySource(userId, month, source, userStats.activeProfile);
+        const incomes = await getIncomesBySource(
+          userId,
+          month,
+          source,
+          userStats.activeProfile
+        );
 
         if (incomes.length === 0) {
           sendOrLogMessage(
@@ -675,6 +677,7 @@ router.post("/", async (req, res) => {
           month,
           monthName,
           source,
+          activeProfile: userStats.activeProfile,
         };
         sendOrLogMessage(twiml, message);
         break;
@@ -703,30 +706,38 @@ router.post("/", async (req, res) => {
           break;
         }
 
-        // A. Envie uma mensagem de "aguarde" imediata
         sendOrLogMessage(
           twiml,
           "🧾 Ok! Gerando seu relatório detalhado, um momento..."
         );
 
-        // B. Finalize a resposta HTTP para a Twilio AGORA
         finalizeResponse();
 
-        // C. Continue o processamento pesado DEPOIS de responder
-        const { month, monthName, category, source } = previousData;
+        const { month, monthName, category, source, activeProfile } =
+          previousData;
         devLog(`Buscando detalhes para: Tipo=${type}, Mês=${month}`);
 
         const detailsMessage =
           type === "income"
-            ? await getIncomeDetails(userId, month, monthName, source, userStats.activeProfile)
-            : await getExpenseDetails(userId, month, monthName, category, userStats.activeProfile);
+            ? await getIncomeDetails(
+                userId,
+                month,
+                monthName,
+                source,
+                activeProfile
+              )
+            : await getExpenseDetails(
+                userId,
+                month,
+                monthName,
+                category,
+                activeProfile
+              );
 
-        // D. Chame nossa nova função para enviar o relatório (que pode ser longo)
         await sendChunkedMessage(userId, detailsMessage);
 
         delete conversationState[userId];
 
-        // Já que a resposta foi enviada, não fazemos mais nada com `twiml` aqui.
         break;
       }
       case "delete_transaction": {
@@ -757,7 +768,7 @@ router.post("/", async (req, res) => {
         break;
       }
       case "greeting": {
-        sendGreetingMessage(twiml);
+        sendGreetingMessage(twiml, userStats);
         break;
       }
       case "add_reminder": {
@@ -827,11 +838,11 @@ router.post("/", async (req, res) => {
         break;
       }
       case "instructions": {
-        sendHelpMessage(twiml);
+        sendHelpMessage(twiml, userStats.activeProfile);
         break;
       }
       default:
-        sendHelpMessage(twiml);
+        sendHelpMessage(twiml, userStats.activeProfile);
         break;
     }
   } catch (err) {
