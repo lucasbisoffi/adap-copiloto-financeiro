@@ -7,7 +7,7 @@ const userStatsSchema = new mongoose.Schema({
 
     profiles: {
         driver: { type: Boolean, default: false },
-        courier: { type: Boolean, default: false }
+        motoboy: { type: Boolean, default: false }
     },
     activeProfile: {
         type: String,
