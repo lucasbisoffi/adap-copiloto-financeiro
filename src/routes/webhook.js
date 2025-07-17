@@ -93,6 +93,12 @@ router.post("/", async (req, res) => {
       (currentState.flow === "vehicle_registration" ||
         currentState.flow === "motorcycle_registration")
     ) {
+      if (req.body.MediaUrl0 && req.body.MediaContentType0.includes("audio")) {
+        const vehicleType = currentState.flow === "motorcycle_registration" ? "da sua moto" : "do seu carro";
+        sendOrLogMessage(twiml, `✋ Para garantir a precisão dos dados, o cadastro ${vehicleType} deve ser feito *apenas por texto*.\n\nPor favor, digite sua resposta.`);
+        return finalizeResponse(); 
+      }
+
       const isMotorcycle = currentState.flow === "motorcycle_registration";
       const config = isMotorcycle ? PROFILE_CONFIG.motoboy : PROFILE_CONFIG.driver; // <-- CORREÇÃO 2: DEFININDO CONFIG
       
