@@ -65,6 +65,25 @@ export const PROFILE_CONFIG = {
       'Entrega Particular', 'Outros',
     ],
   },
+  zev_driver: {
+    name: 'Motorista Z-EV',
+    emoji: '⚡',
+    incomeTerm: 'Corrida',
+    incomeExample: 'ganhei 60 na z-ev em 20km',
+    expenseExample: '35 na recarga',
+    vehicleName: 'carro elétrico',
+    artigoDefinido: 'o',
+    artigoIndefinido: 'um',
+    pronomePossessivo: 'seu',
+    generoObjeto: 'dele',
+    incomeCategories: ['Corrida', 'Gorjeta', 'Bônus', 'Outros'],
+    expenseCategories: [
+      'Recarga Elétrica', 'Manutenção (Pneus/Freios)', 'Limpeza', 
+      'Alimentação/Água', 'Seguro', 'Parcela do Aluguel/Financiamento', 
+      'Software/Assinaturas', 'Outros'
+    ],
+    incomeSources: ['Z-EV', 'Uber', '99', 'Particular', 'Outros'],
+  },
 };
 
 /**
@@ -73,8 +92,8 @@ export const PROFILE_CONFIG = {
  * categoria de qualquer perfil seja salva no banco de dados.
  * O Set garante que não haverá valores duplicados.
  */
-export const ALL_INCOME_CATEGORIES = [...new Set([...PROFILE_CONFIG.driver.incomeCategories, ...PROFILE_CONFIG.motoboy.incomeCategories])];
-export const ALL_EXPENSE_CATEGORIES = [...new Set([...PROFILE_CONFIG.driver.expenseCategories, ...PROFILE_CONFIG.motoboy.expenseCategories])];
+export const ALL_INCOME_CATEGORIES = [...new Set([...PROFILE_CONFIG.driver.incomeCategories, ...PROFILE_CONFIG.motoboy.incomeCategories, ...PROFILE_CONFIG.zev_driver.incomeCategories])];
+export const ALL_EXPENSE_CATEGORIES = [...new Set([...PROFILE_CONFIG.driver.expenseCategories, ...PROFILE_CONFIG.motoboy.expenseCategories, ...PROFILE_CONFIG.zev_driver.expenseCategories])];
 export const ALL_REMINDER_TYPES = [...new Set([
   'Pagamento', 
   'Documentação', 

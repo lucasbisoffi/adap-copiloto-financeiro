@@ -14,10 +14,13 @@ import UserStats from "../models/UserStats.js";
 import Reminder from "../models/Reminder.js";
 import Vehicle from "../models/Vehicle.js";
 import Motorcycle from "../models/Motorcycle.js";
+import ElectricVehicle from "../models/ElectricVehicle.js";
 import { PROFILE_CONFIG } from "../utils/categories.js";
+import Turn from "../models/Turn.js";
 import {
   interpretDriverMessage,
   interpretMotoboyMessage,
+  interpretZEVMessage,
   transcribeAudioWithWhisper,
 } from "../services/aiService.js";
 import { generatePlatformChart } from "../services/chartService.js";
@@ -74,6 +77,7 @@ router.post("/", async (req, res) => {
     }
     devLog(`Mensagem de ${userId} para processar: "${messageToProcess}"`);
 
+    let userStats = await UserStats.findOne({ userId });
     const currentState = conversationState[userId];
     if (messageToProcess.toLowerCase().trim() === "cancelar") {
       if (currentState) {
@@ -91,23 +95,25 @@ router.post("/", async (req, res) => {
     if (
       currentState &&
       (currentState.flow === "vehicle_registration" ||
-        currentState.flow === "motorcycle_registration")
+        currentState.flow === "motorcycle_registration" ||
+        currentState.flow === "ev_registration")
     ) {
-      if (req.body.MediaUrl0 && req.body.MediaContentType0.includes("audio")) {
-        const vehicleType = currentState.flow === "motorcycle_registration" ? "da sua moto" : "do seu carro";
-        sendOrLogMessage(twiml, `✋ Para garantir a precisão dos dados, o cadastro ${vehicleType} deve ser feito *apenas por texto*.\n\nPor favor, digite sua resposta.`);
-        return finalizeResponse(); 
+
+      let config;
+      if (currentState.flow === 'motorcycle_registration') {
+        config = PROFILE_CONFIG.motoboy;
+      } else if (currentState.flow === 'ev_registration') {
+        config = PROFILE_CONFIG.zev_driver;
+      } else {
+        config = PROFILE_CONFIG.driver;
       }
 
-      const isMotorcycle = currentState.flow === "motorcycle_registration";
-      const config = isMotorcycle ? PROFILE_CONFIG.motoboy : PROFILE_CONFIG.driver; // <-- CORREÇÃO 2: DEFININDO CONFIG
-      
-      const vehicleType = isMotorcycle ? "moto" : "carro";
-      const vehicleEmoji = isMotorcycle ? "🏍️" : "🚗";
+      if (req.body.MediaUrl0 && req.body.MediaContentType0.includes("audio")) {
+        sendOrLogMessage(twiml, `✋ Para garantir a precisão dos dados, o cadastro d${config.artigoDefinido} ${config.vehicleName} deve ser feito *apenas por texto*.\n\nPor favor, digite sua resposta.`);
+        return finalizeResponse();
+      }
 
-      devLog(
-        `Fluxo de Cadastro de ${vehicleType} - Passo: ${currentState.step}`
-      );
+      devLog(`Fluxo de Cadastro de ${config.vehicleName} - Passo: ${currentState.step}`);
       const flowMessage = messageToProcess.trim();
       const isConfirmation = ["sim", "s"].includes(flowMessage.toLowerCase());
 
@@ -125,12 +131,9 @@ router.post("/", async (req, res) => {
             currentState.brand = currentState.tempData;
             delete currentState.tempData;
             currentState.step = "awaiting_model";
-            const modelExample = isMotorcycle
-              ? "(Ex: CG 160, Fazer 250)"
-              : "(Ex: Onix, Argo)";
             sendOrLogMessage(
               twiml,
-              `✅ Marca confirmada!\n\nAgora, qual o *modelo* da sua ${vehicleType}? ${modelExample}`
+              `✅ Marca confirmada!\n\nAgora, qual o *modelo* d${config.artigoDefinido} ${config.vehicleName}?`
             );
           } else {
             currentState.tempData = flowMessage;
@@ -155,7 +158,7 @@ router.post("/", async (req, res) => {
             currentState.step = "awaiting_year";
             sendOrLogMessage(
               twiml,
-              `✅ Modelo confirmado!\n\nQual o *ano* da sua ${vehicleType}? (Ex: 2022)`
+              `✅ Modelo confirmado!\n\nQual o *ano* d${config.artigoDefinido} ${config.vehicleName}? (Ex: 2022)`
             );
           } else {
             currentState.tempData = flowMessage;
@@ -196,7 +199,7 @@ router.post("/", async (req, res) => {
               "✅ Ano confirmado!\n\nPara finalizar, qual a *quilometragem (KM)* atual do painel?"
             );
           } else {
-            currentState.tempData = flowMessage; 
+            currentState.tempData = flowMessage;
             sendOrLogMessage(
               twiml,
               `Ok, entendi: *${flowMessage}*\n\nCorreto? (Responda "*sim*" ou envie novamente)`
@@ -222,7 +225,8 @@ router.post("/", async (req, res) => {
         case "confirming_mileage":
           if (isConfirmation) {
             currentState.mileage = currentState.tempData;
-            if (isMotorcycle) {
+
+            if (currentState.flow === "motorcycle_registration") {
               const newMotorcycle = new Motorcycle({
                 userId,
                 brand: currentState.brand,
@@ -240,6 +244,20 @@ router.post("/", async (req, res) => {
                     activeProfile: "motoboy",
                   },
                 }
+              );
+            } else if (currentState.flow === "ev_registration") {
+              const newEV = new ElectricVehicle({
+                userId,
+                brand: currentState.brand,
+                model: currentState.model,
+                year: currentState.year,
+                initialMileage: currentState.mileage,
+                currentMileage: currentState.mileage,
+              });
+              await newEV.save();
+              await UserStats.findOneAndUpdate(
+                { userId },
+                { $set: { activeEVId: newEV._id, activeProfile: "zev_driver" } }
               );
             } else {
               const newVehicle = new Vehicle({
@@ -282,36 +300,42 @@ router.post("/", async (req, res) => {
             }
           }
           break;
+        default:
+          sendOrLogMessage(twiml, `Hmm, não entendi. Você está no meio do cadastro d${config.artigoDefinido} ${config.vehicleName}. Digite 'cancelar' para sair.`);
+          break;
       }
       return finalizeResponse();
     }
 
-    let userStats = await UserStats.findOne({ userId });
-
     if (!userStats) {
       const choice = messageToProcess.trim();
-      if (choice === "1" || choice === "2") {
-        const profileType = choice === "1" ? "driver" : "motoboy";
+      if (choice === "1" || choice === "2" || choice === "3") {
+        let profileType;
+        if (choice === "1") profileType = "driver";
+        if (choice === "2") profileType = "motoboy";
+        if (choice === "3") profileType = "zev_driver";
+
         userStats = await UserStats.create({
           userId,
           profiles: { [profileType]: true },
           activeProfile: profileType,
           welcomedToV2: true,
         });
+
         const config = PROFILE_CONFIG[profileType];
         const flow =
-          profileType === "driver"
-            ? "vehicle_registration"
-            : "motorcycle_registration";
-        const vehicleName = profileType === "driver" ? "carro" : "moto";
+          profileType === "motoboy"
+            ? "motorcycle_registration"
+            : "vehicle_registration";
+
         conversationState[userId] = { flow, step: "awaiting_brand" };
         sendOrLogMessage(
           twiml,
-          `✅ Perfil criado! Para finalizar, vamos cadastrar sua ${vehicleName}.\n\nQual a *marca*?`
+          `✅ Perfil criado! Para finalizar, vamos cadastrar ${config.pronomePossessivo} ${config.vehicleName}.\n\nQual a marca ${config.generoObjeto}?`
         );
       } else {
         const welcomeMsg =
-          "👋 Bem-vindo(a) ao ADAP! Para começar, me diga sua principal ferramenta de trabalho:\n\n*1* - Carro 🚗 (Motorista)\n*2* - Moto 🏍️ (Entregador)";
+          "👋 Bem-vindo(a) ao ADAP! Para começar, me diga qual é o seu perfil:\n\n*1* - Motorista de App 🚗\n*2* - Entregador de Moto 🏍️\n*3* - Motorista Z-EV ⚡";
         sendOrLogMessage(twiml, welcomeMsg);
       }
       return finalizeResponse();
@@ -327,9 +351,12 @@ router.post("/", async (req, res) => {
 
     const generateId = customAlphabet("1234567890abcdef", 5);
     const todayISO = new Date().toISOString();
+
     let interpretation;
 
-    if (userStats.activeProfile === "motoboy") {
+    if (userStats.activeProfile === "zev_driver") {
+      interpretation = await interpretZEVMessage(messageToProcess, todayISO);
+    } else if (userStats.activeProfile === "motoboy") {
       interpretation = await interpretMotoboyMessage(
         messageToProcess,
         todayISO
@@ -345,14 +372,39 @@ router.post("/", async (req, res) => {
     switch (interpretation.intent) {
       case "switch_profile": {
         const { profile } = interpretation.data;
+        let profileName = "";
+
         if (userStats.profiles[profile]) {
           userStats.activeProfile = profile;
           await userStats.save();
-          const profileName =
-            profile === "driver" ? "Motorista 🚗" : "Entregador 🏍️";
+
+          switch (profile) {
+            case "driver":
+              profileName = "Motorista 🚗";
+              break;
+            case "motoboy":
+              profileName = "Entregador 🏍️";
+              break;
+            case "zev_driver":
+              profileName = "Motorista Z-EV ⚡";
+              break;
+          }
           sendOrLogMessage(twiml, `✅ Perfil alterado para *${profileName}*!`);
         } else {
-          const profileName = profile === "driver" ? "Motorista" : "Entregador";
+          switch (profile) {
+            case "driver":
+              profileName = "Motorista";
+              break;
+            case "motoboy":
+              profileName = "Entregador";
+              break;
+            case "zev_driver":
+              profileName = "Motorista Z-EV";
+              break;
+            default:
+              profileName = "solicitado";
+              break;
+          }
           sendOrLogMessage(
             twiml,
             `Você ainda não tem um perfil de ${profileName}. Diga *"adicionar perfil de ${profileName.toLowerCase()}"* para criar um.`
@@ -362,19 +414,38 @@ router.post("/", async (req, res) => {
       }
       case "add_profile": {
         const { profile } = interpretation.data;
+        if (!profile) {
+          sendOrLogMessage(twiml, "Não entendi qual perfil você quer adicionar. Tente dizer 'adicionar perfil de motorista', 'motoboy' ou 'Z-EV'.");
+          break;
+        }
+        
         if (userStats.profiles[profile]) {
           sendOrLogMessage(twiml, "Você já tem este perfil!");
           break;
         }
+
         await UserStats.updateOne(
           { userId },
           { $set: { [`profiles.${profile}`]: true } }
         );
+
         const config = PROFILE_CONFIG[profile];
-        const flow =
-          profile === "driver"
-            ? "vehicle_registration"
-            : "motorcycle_registration";
+        let flow;
+
+        switch (profile) {
+          case 'driver':
+            flow = 'vehicle_registration';
+            break;
+          case 'motoboy':
+            flow = 'motorcycle_registration';
+            break;
+          case 'zev_driver':
+            flow = 'ev_registration'; 
+            break;
+          default:
+            sendOrLogMessage(twiml, "Ops, ocorreu um erro ao selecionar o perfil. Tente novamente.");
+            return; 
+        }
         
         conversationState[userId] = { flow, step: "awaiting_brand" };
         
@@ -384,39 +455,250 @@ router.post("/", async (req, res) => {
         );
         break;
       }
+      case "start_turn": {
+        if (userStats.activeProfile !== "zev_driver") {
+          sendOrLogMessage(
+            twiml,
+            "Esta funcionalidade está disponível apenas para o perfil Z-EV. ⚡"
+          );
+          break;
+        }
+
+        if (userStats.isTurnActive) {
+          sendOrLogMessage(
+            twiml,
+            "Você já está com um turno em andamento. Para iniciar um novo, primeiro encerre o atual com o comando 'encerrar turno [km]'."
+          );
+          break;
+        }
+
+        const { mileage } = interpretation.data;
+
+        if (!mileage || typeof mileage !== "number" || mileage < 0) {
+          sendOrLogMessage(
+            twiml,
+            "Não entendi a quilometragem. Por favor, tente novamente. Ex: *iniciar turno 12345 km*"
+          );
+          break;
+        }
+
+        const startTime = new Date();
+
+        await UserStats.updateOne(
+          { userId },
+          {
+            $set: {
+              isTurnActive: true,
+              currentTurnStartMileage: mileage,
+              currentTurnStartDate: startTime,
+            },
+          }
+        );
+
+        await Vehicle.updateOne(
+          { _id: userStats.activeVehicleId },
+          { $set: { currentMileage: mileage } }
+        );
+
+        const formattedTime = startTime.toLocaleTimeString("pt-BR", {
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: TIMEZONE,
+        });
+        sendOrLogMessage(
+          twiml,
+          `✅ Turno iniciado às *${formattedTime}* com *${mileage.toLocaleString(
+            "pt-BR"
+          )} km*.\n\nBoas corridas! ⚡`
+        );
+        break;
+      }
+      case "end_turn": {
+        if (userStats.activeProfile !== "zev_driver") {
+          sendOrLogMessage(
+            twiml,
+            "Esta funcionalidade está disponível apenas para o perfil Z-EV. ⚡"
+          );
+          break;
+        }
+
+        if (!userStats.isTurnActive) {
+          sendOrLogMessage(
+            twiml,
+            "Você não tem nenhum turno ativo no momento. Para iniciar, diga 'iniciar turno [km]'."
+          );
+          break;
+        }
+
+        const { mileage: endMileage } = interpretation.data;
+
+        if (
+          !endMileage ||
+          typeof endMileage !== "number" ||
+          endMileage < userStats.currentTurnStartMileage
+        ) {
+          sendOrLogMessage(
+            twiml,
+            `A quilometragem final parece inválida. Ela deve ser um número maior que a quilometragem inicial de *${userStats.currentTurnStartMileage.toLocaleString(
+              "pt-BR"
+            )} km*.`
+          );
+          break;
+        }
+
+        sendOrLogMessage(
+          twiml,
+          "🏁 Ok! Encerrando seu turno e calculando seu desempenho... Um momento."
+        );
+        finalizeResponse();
+
+        try {
+          const endDate = new Date();
+          const distanceTraveled =
+            endMileage - userStats.currentTurnStartMileage;
+
+          const [incomes, expenses] = await Promise.all([
+            Income.find({
+              userId,
+              profileType: "zev_driver",
+              date: { $gte: userStats.currentTurnStartDate },
+            }),
+            Expense.find({
+              userId,
+              profileType: "zev_driver",
+              date: { $gte: userStats.currentTurnStartDate },
+            }),
+          ]);
+
+          const totalIncome = incomes.reduce((sum, doc) => sum + doc.amount, 0);
+          const totalExpense = expenses.reduce(
+            (sum, doc) => sum + doc.amount,
+            0
+          );
+          const totalProfit = totalIncome - totalExpense;
+          const earningsPerKm =
+            distanceTraveled > 0 ? totalIncome / distanceTraveled : 0;
+
+          // Cria o registro histórico do turno
+          const newTurn = new Turn({
+            userId,
+            profileType: "zev_driver",
+            startDate: userStats.currentTurnStartDate,
+            endDate,
+            startMileage: userStats.currentTurnStartMileage,
+            endMileage,
+            distanceTraveled,
+            totalIncome,
+            totalExpense,
+            totalProfit,
+            earningsPerKm,
+          });
+          await newTurn.save();
+
+          await UserStats.updateOne(
+            { userId },
+            {
+              $set: {
+                isTurnActive: false,
+                currentTurnStartMileage: 0,
+                currentTurnStartDate: null,
+              },
+            }
+          );
+          await ElectricVehicle.updateOne(
+            { _id: userStats.activeEVId }, 
+            { $set: { currentMileage: endMileage } }
+          );
+
+          let summaryMessage = `*Resumo do seu Turno* 🏁\n\n`;
+          summaryMessage += `🛣️ *Distância:* ${distanceTraveled.toFixed(
+            1
+          )} km\n`;
+          summaryMessage += `💰 *Ganhos:* R$ ${totalIncome.toFixed(2)}\n`;
+          summaryMessage += `💸 *Gastos:* R$ ${totalExpense.toFixed(2)}\n`;
+          summaryMessage += `----------\n`;
+          summaryMessage += `✅ *Lucro:* R$ ${totalProfit.toFixed(2)}\n`;
+          summaryMessage += `📈 *R$/km:* R$ ${earningsPerKm.toFixed(2)}\n`;
+
+          await sendChunkedMessage(userId, summaryMessage);
+        } catch (error) {
+          devLog("ERRO CRÍTICO ao encerrar turno:", error);
+          await sendChunkedMessage(
+            userId,
+            "❌ Ops! Tive um problema ao calcular o resumo do seu turno. Por favor, tente novamente."
+          );
+        }
+        break;
+      }
       case "get_vehicle_details": {
-        const config = PROFILE_CONFIG['driver']; 
+        const config = PROFILE_CONFIG["driver"];
         if (!userStats.activeVehicleId) {
-          sendOrLogMessage(twiml, `${config.emoji} Você ainda não cadastrou ${config.artigoIndefinido} ${config.vehicleName}. Diga "adicionar perfil de motorista" para começar.`);
+          sendOrLogMessage(
+            twiml,
+            `${config.emoji} Você ainda não cadastrou ${config.artigoIndefinido} ${config.vehicleName}. Diga "adicionar perfil de motorista" para começar.`
+          );
           break;
         }
         const vehicle = await Vehicle.findById(userStats.activeVehicleId);
-        const vehicleMessage = `*Seu ${config.vehicleName.charAt(0).toUpperCase() + config.vehicleName.slice(1)} Ativo* ${config.emoji}\n\n*Marca:* ${vehicle.brand}\n*Modelo:* ${vehicle.model}\n*Ano:* ${vehicle.year}\n*KM Atual:* ${vehicle.currentMileage.toLocaleString("pt-BR")} km`;
+        const vehicleMessage = `*Seu ${
+          config.vehicleName.charAt(0).toUpperCase() +
+          config.vehicleName.slice(1)
+        } Ativo* ${config.emoji}\n\n*Marca:* ${vehicle.brand}\n*Modelo:* ${
+          vehicle.model
+        }\n*Ano:* ${
+          vehicle.year
+        }\n*KM Atual:* ${vehicle.currentMileage.toLocaleString("pt-BR")} km`;
         sendOrLogMessage(twiml, vehicleMessage);
         break;
       }
       case "get_motorcycle_details": {
-        const config = PROFILE_CONFIG['motoboy'];
+        const config = PROFILE_CONFIG["motoboy"];
         if (!userStats.activeMotorcycleId) {
-          sendOrLogMessage(twiml, `${config.emoji} Você ainda não cadastrou ${config.artigoIndefinido} ${config.vehicleName}. Diga "adicionar perfil de moto" para começar.`);
+          sendOrLogMessage(
+            twiml,
+            `${config.emoji} Você ainda não cadastrou ${config.artigoIndefinido} ${config.vehicleName}. Diga "adicionar perfil de moto" para começar.`
+          );
           break;
         }
-        const motorcycle = await Motorcycle.findById(userStats.activeMotorcycleId);
-        const motorcycleMessage = `*Sua ${config.vehicleName.charAt(0).toUpperCase() + config.vehicleName.slice(1)} Ativa* ${config.emoji}\n\n*Marca:* ${motorcycle.brand}\n*Modelo:* ${motorcycle.model}\n*Ano:* ${motorcycle.year}\n*KM Atual:* ${motorcycle.currentMileage.toLocaleString("pt-BR")} km`;
+        const motorcycle = await Motorcycle.findById(
+          userStats.activeMotorcycleId
+        );
+        const motorcycleMessage = `*Sua ${
+          config.vehicleName.charAt(0).toUpperCase() +
+          config.vehicleName.slice(1)
+        } Ativa* ${config.emoji}\n\n*Marca:* ${motorcycle.brand}\n*Modelo:* ${
+          motorcycle.model
+        }\n*Ano:* ${
+          motorcycle.year
+        }\n*KM Atual:* ${motorcycle.currentMileage.toLocaleString("pt-BR")} km`;
         sendOrLogMessage(twiml, motorcycleMessage);
         break;
       }
-
+      case "get_ev_details": {
+        if (!userStats.activeEVId) {
+          sendOrLogMessage(twiml, "⚡ Você ainda não cadastrou seu carro elétrico. Use o comando 'adicionar perfil z-ev'.");
+          break;
+        }
+        const ev = await ElectricVehicle.findById(userStats.activeEVId);
+        const evMessage = `*Seu Z-EV Ativo* ⚡\n\n*Marca:* ${ev.brand}\n*Modelo:* ${ev.model}\n*Ano:* ${ev.year}\n*KM Atual:* ${ev.currentMileage.toLocaleString("pt-BR")} km`;
+        sendOrLogMessage(twiml, evMessage);
+        break;
+      }
       case "add_income": {
-        const { amount, description, category, source, tax, distance } = interpretation.data;
+        let { amount, description, category, source, tax, distance } = interpretation.data;
         const config = PROFILE_CONFIG[userStats.activeProfile];
 
         if (
           (category === "Corrida" || category === "Entrega") && 
           (!distance || typeof distance !== "number" || distance <= 0)
         ) {
-          sendOrLogMessage(twiml, `📈 Para registrar sua ${config.incomeTerm}, preciso saber a *quilometragem (km)*.\n\nPor favor, envie novamente com a distância.`);
+          sendOrLogMessage(twiml, `📈 Para registrar sua ${config.incomeTerm}, preciso saber a *quilometragem (km)*.`);
           break;
+        }
+
+        if (distance && distance > 0) {
+          category = config.incomeTerm; 
+          description = config.incomeTerm.toLowerCase(); 
         }
 
         const newIncome = new Income({
@@ -503,8 +785,8 @@ router.post("/", async (req, res) => {
           const reportData = await getIncomesBySource(
             userId,
             currentMonth,
-            null, 
-            userStats.activeProfile 
+            null,
+            userStats.activeProfile
           );
 
           if (reportData.length === 0) {
@@ -617,11 +899,17 @@ router.post("/", async (req, res) => {
           userStats.activeProfile
         );
 
-        const config = PROFILE_CONFIG[userStats.activeProfile]; 
-        const incomeTermPlural = config.incomeTerm === 'Entrega' ? 'entregas' : 'corridas';
+        const config = PROFILE_CONFIG[userStats.activeProfile];
+        const incomeTermPlural =
+          config.incomeTerm === "Entrega" ? "entregas" : "corridas";
 
         if (incomes.length === 0) {
-          sendOrLogMessage(twiml, `Você não tem nenhuma ${incomeTermPlural} registrada em *${monthName}* ${source ? `da plataforma *${source}*` : ""}.`);
+          sendOrLogMessage(
+            twiml,
+            `Você não tem nenhuma ${incomeTermPlural} registrada em *${monthName}* ${
+              source ? `da plataforma *${source}*` : ""
+            }.`
+          );
           break;
         }
 
@@ -634,7 +922,11 @@ router.post("/", async (req, res) => {
           totalIncome += inc.total;
           const averageRperKm = inc.total / inc.totalDistance;
 
-          const detailsLine = `_${inc.count} ${incomeTermPlural} | ${inc.totalDistance.toFixed(1)} km | R$ ${averageRperKm.toFixed(2)} por km_`;
+          const detailsLine = `_${
+            inc.count
+          } ${incomeTermPlural} | ${inc.totalDistance.toFixed(
+            1
+          )} km | R$ ${averageRperKm.toFixed(2)} por km_`;
 
           message += `\n*${inc._id}: R$ ${inc.total.toFixed(
             2
@@ -643,7 +935,6 @@ router.post("/", async (req, res) => {
 
         message += `\n*Total Recebido:* R$ ${totalIncome.toFixed(2)}`;
         message += `\n\n_Digite "detalhes ${incomeTermPlural}" para ver a lista completa._`;
-
 
         conversationState[userId] = {
           type: "income",
@@ -811,11 +1102,11 @@ router.post("/", async (req, res) => {
         break;
       }
       case "instructions": {
-        sendHelpMessage(twiml, userStats.activeProfile);
+        sendHelpMessage(twiml, userStats);
         break;
       }
       default:
-        sendHelpMessage(twiml, userStats.activeProfile);
+        sendHelpMessage(twiml, userStats);
         break;
     }
   } catch (err) {

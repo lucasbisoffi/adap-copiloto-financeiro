@@ -7,13 +7,20 @@ const userStatsSchema = new mongoose.Schema({
 
     profiles: {
         driver: { type: Boolean, default: false },
-        motoboy: { type: Boolean, default: false }
+        motoboy: { type: Boolean, default: false },
+        zev_driver: { type: Boolean, default: false },
     },
     activeProfile: {
         type: String,
-        enum: ['driver', 'motoboy'],
+        enum: ['driver', 'motoboy', 'zev_driver'],
     },
     
+    // --- CAMPOS PARA GERENCIAMENTO DE TURNO ---
+    isTurnActive: { type: Boolean, default: false },
+    currentTurnStartMileage: { type: Number, default: 0 },
+    currentTurnStartDate: { type: Date },
+    // ---------------------------------------------
+
     welcomedToV2: { type: Boolean, default: false },
 
     activeVehicleId: { 
@@ -23,6 +30,10 @@ const userStatsSchema = new mongoose.Schema({
     activeMotorcycleId: {
         type: mongoose.Schema.Types.ObjectId, 
         ref: 'Motorcycle'
+    },
+    activeEVId: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'ElectricVehicle' 
     },
     
     blocked: { type: Boolean, default: false },
