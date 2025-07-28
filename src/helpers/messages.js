@@ -6,19 +6,20 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export function sendGreetingMessage(twiml, userProfile) {
-  sendHelpMessage(twiml, userProfile.activeProfile);
+export function sendGreetingMessage(twiml, userStats) {
+  sendHelpMessage(twiml, userStats);
 }
 
-export function sendHelpMessage(twiml, profileType = 'driver') {
-  const config = PROFILE_CONFIG[profileType];
+export function sendHelpMessage(twiml, userStats) {
+  const activeProfile = userStats.activeProfile || 'driver';
+  const config = PROFILE_CONFIG[activeProfile];
 
-  const message = `👋 Olá! Sou o *ADAP, seu Copiloto Financeiro*.
+  let message = `👋 Olá! Sou o *ADAP*, seu Copiloto Financeiro para *${config.name}s*.
 
-Aqui estão alguns exemplos para o seu perfil de *${config.name} ${config.emoji}*:
+Aqui estão alguns exemplos para o seu perfil ${config.emoji}:
 
 *Para começar:*
-› "cadastrar ${config.artigoIndefinido} ${config.vehicleName}"
+› "cadastrar ${config.pronomePossessivo} ${config.vehicleName}"
 › "ver dados d${config.artigoDefinido} ${config.vehicleName}"
 
 *Lançamentos:*
@@ -32,12 +33,29 @@ Aqui estão alguns exemplos para o seu perfil de *${config.name} ${config.emoji}
 › "gráfico das plataformas"
 
 *Lembretes:*
-› "me lembre de pagar o seguro d${config.artigoDefinido} ${config.vehicleName}"
+› "me lembre de pagar o seguro d${config.artigoDefinido} ${config.vehicleName}"`;
+
+  // =================== INSTRUÇÃO EXCLUSIVA DA Z-EV ===================
+  // Adiciona a seção de turnos apenas se o perfil for zev_driver
+  if (activeProfile === 'zev_driver') {
+    message += `
+
+*Gerenciar Turnos:*
+› "iniciar turno 10500 km"
+› "encerrar turno 10650 km"`;
+  }
+  // =====================================================================
+
+  message += `
+
+*Alternar entre perfis:*
+› "mudar para motorista", "mudar para motoboy", "mudar para motorista Z-EV"
 
 Para apagar um registro, use o ID fornecido. Ex: "apagar #a4b8c".`;
   
   sendOrLogMessage(twiml, message);
 }
+
 
 export function sendIncomeAddedMessage(twiml, incomeData) {
   const { amount, description, source, distance, tax, messageId, category } = incomeData;
