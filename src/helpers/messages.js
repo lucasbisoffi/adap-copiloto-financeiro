@@ -6,56 +6,42 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export function sendGreetingMessage(twiml, userStats) {
-  sendHelpMessage(twiml, userStats);
+export function sendGreetingMessage(twiml) {
+  sendHelpMessage(twiml);
 }
 
-export function sendHelpMessage(twiml, userStats) {
-  const activeProfile = userStats.activeProfile || 'driver';
-  const config = PROFILE_CONFIG[activeProfile];
+export function sendHelpMessage(twiml) {
+  const config = ZEV_CONFIG;
 
   let message = `👋 Olá! Sou o *ADAP*, seu Copiloto Financeiro para *${config.name}s*.
 
 Aqui estão alguns exemplos para o seu perfil ${config.emoji}:
 
-*Para começar:*
+*PARA COMEÇAR:*
 › "cadastrar ${config.pronomePossessivo} ${config.vehicleName}"
 › "ver dados d${config.artigoDefinido} ${config.vehicleName}"
 
-*Lançamentos:*
-› "${config.expenseExample}"
-› "${config.incomeExample}"
-
-*Relatórios:*
-› "resumo da semana"
-› "meus gastos"
-› "meus ganhos"
-› "gráfico das plataformas"
-
-*Lembretes:*
-› "me lembre de pagar o seguro d${config.artigoDefinido} ${config.vehicleName}"`;
-
-  // =================== INSTRUÇÃO EXCLUSIVA DA Z-EV ===================
-  // Adiciona a seção de turnos apenas se o perfil for zev_driver
-  if (activeProfile === 'zev_driver') {
-    message += `
-
-*Gerenciar Turnos:*
+*GERENCIAR TURNO:*
 › "iniciar turno 10500 km"
-› "encerrar turno 10650 km"`;
-  }
-  // =====================================================================
+› "encerrar turno 10650 km"
+  (Após encerrar, eu pedirei seus ganhos. Ex: \`250 na z-ev em 10 corridas, 110 na uber em 5 corridas\`)
 
-  message += `
+*LANÇAMENTOS:*
+› "${config.expenseExample}"
+› "ganhei 25 de gorjeta"
 
-*Alternar entre perfis:*
-› "mudar para motorista", "mudar para motoboy", "mudar para motorista Z-EV"
+*RELATÓRIOS E OUTROS:*
+› "resumo do dia", "resumo da semana"
+› "meus gastos de agosto"
+› "meus ganhos de julho"
+› "gráfico das plataformas"
+› "meu carro"
+› "me lembre de pagar o seguro amanhã às 15h"
 
 Para apagar um registro, use o ID fornecido. Ex: "apagar #a4b8c".`;
   
   sendOrLogMessage(twiml, message);
 }
-
 
 export function sendIncomeAddedMessage(twiml, incomeData) {
   const { amount, description, source, distance, tax, messageId, category } = incomeData;
@@ -144,29 +130,25 @@ export function sendTotalRemindersMessage(twiml, allFutureReminders) {
   );
 }
 
-export function sendPeriodReportMessage(twiml, reportData, activeProfile) {
+export function sendPeriodReportMessage(twiml, reportData) {
   if (reportData.incomeCount === 0 && reportData.expenseCount === 0) {
     sendOrLogMessage(twiml, `Você ainda não tem nenhum registro para o período selecionado (${reportData.title}).`);
     return;
   }
   
   const title = reportData.title;
-  const rPerKm = reportData.totalDistance > 0 ? (reportData.totalIncome / reportData.totalDistance).toFixed(2) : '0.00';
   const profitEmoji = reportData.profit >= 0 ? "✅" : "❌";
-
-  const incomeLabel = activeProfile === 'motoboy' ? 'Entregas' : 'Corridas';
-  const incomeMetricLabel = activeProfile === 'motoboy' ? 'R$/entrega' : 'R$/km Médio';
   
-  const incomeMetricValue = activeProfile === 'motoboy'
-    ? (reportData.incomeCount > 0 ? (reportData.totalIncome / reportData.incomeCount).toFixed(2) : '0.00')
-    : rPerKm;
+  const incomeMetricValue = reportData.incomeCount > 0 
+    ? (reportData.totalIncome / reportData.incomeCount).toFixed(2) 
+    : '0.00';
 
   let message = `📊 *Resumo ${title}*\n\n`;
 
   message += `*Ganhos* 💰\n`;
   message += `› *Total:* R$ ${reportData.totalIncome.toFixed(2)}\n`;
-  message += `› *${incomeLabel}:* ${reportData.incomeCount}\n`;
-  message += `› *${incomeMetricLabel}:* R$ ${incomeMetricValue}\n\n`;
+  message += `› *Registros de Ganhos:* ${reportData.incomeCount}\n`; 
+  message += `› *Média p/ Registro:* R$ ${incomeMetricValue}\n\n`;
 
   message += `*Gastos* 💸\n`;
   message += `› *Total:* R$ ${reportData.totalExpenses.toFixed(2)}\n`;

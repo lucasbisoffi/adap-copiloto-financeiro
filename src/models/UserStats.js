@@ -4,17 +4,6 @@ const userStatsSchema = new mongoose.Schema(
   {
     userId: { type: String, required: true, unique: true },
 
-    profiles: {
-      driver: { type: Boolean, default: false },
-      motoboy: { type: Boolean, default: false },
-      zev_driver: { type: Boolean, default: false },
-    },
-    activeProfile: {
-      type: String,
-      enum: ["driver", "motoboy", "zev_driver"],
-    },
-
-    // ============ NOVOS CAMPOS Z-EV ===================
     isLeader: { type: Boolean, default: false },
     isDependent: { type: Boolean, default: false },
     leaderUserId: { type: String, index: true, default: null },
@@ -22,18 +11,8 @@ const userStatsSchema = new mongoose.Schema(
     isTurnActive: { type: Boolean, default: false },
     currentTurnStartMileage: { type: Number, default: 0 },
     currentTurnStartDate: { type: Date },
-    // ==================================================
-    welcomedToV2: { type: Boolean, default: false },
 
-    activeVehicleId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Vehicle",
-    },
-    activeMotorcycleId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Motorcycle",
-    },
-    activeEVId: {
+    vehicleId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ElectricVehicle",
     },
