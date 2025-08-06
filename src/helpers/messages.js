@@ -1,5 +1,5 @@
 import { OpenAI } from "openai";
-import { PROFILE_CONFIG } from '../utils/categories.js';
+import { ZEV_CONFIG } from '../utils/categories.js';
 import { sendOrLogMessage } from "./responseHelper.js";
 import { TIMEZONE } from "../utils/dateUtils.js";
 const openai = new OpenAI({
@@ -13,32 +13,37 @@ export function sendGreetingMessage(twiml) {
 export function sendHelpMessage(twiml) {
   const config = ZEV_CONFIG;
 
-  let message = `👋 Olá! Sou o *ADAP*, seu Copiloto Financeiro para *${config.name}s*.
+  let message = `👋 Olá! Sou o *ADAP: Z-EV*, seu copiloto financeiro ${config.emoji}.
 
-Aqui estão alguns exemplos para o seu perfil ${config.emoji}:
+Aqui estão os principais comandos:
 
-*PARA COMEÇAR:*
-› "cadastrar ${config.pronomePossessivo} ${config.vehicleName}"
-› "ver dados d${config.artigoDefinido} ${config.vehicleName}"
+*🏁 GERENCIAR TURNO:*
+› \`iniciar turno [km inicial]\`
+› \`encerrar turno [km final]\` 
+  _(vou perguntar quanto você recebeu e quantas corridas realizou!)_
 
-*GERENCIAR TURNO:*
-› "iniciar turno 10500 km"
-› "encerrar turno 10650 km"
-  (Após encerrar, eu pedirei seus ganhos. Ex: \`250 na z-ev em 10 corridas, 110 na uber em 5 corridas\`)
+*🎯 DEFINIR META DO DIA:*
+› \`meta de hoje 300\` 
+  _(faça isso após iniciar o turno)_
 
-*LANÇAMENTOS:*
-› "${config.expenseExample}"
-› "ganhei 25 de gorjeta"
+*💸 REGISTRAR GASTOS E GANHOS:*
+› \`45 na recarga de 20kwh\`
+› \`gastei 50 no almoço\`
+› \`ganhei 25 de gorjeta\`
 
-*RELATÓRIOS E OUTROS:*
-› "resumo do dia", "resumo da semana"
-› "meus gastos de agosto"
-› "meus ganhos de julho"
-› "gráfico das plataformas"
-› "meu carro"
-› "me lembre de pagar o seguro amanhã às 15h"
+*🗓️ LEMBRETES:*
+› \`lembrete turno 8h\` 
+  _(para ser avisado todo dia)_
+› \`lembrete pagar seguro amanhã às 15h\`
 
-Para apagar um registro, use o ID fornecido. Ex: "apagar #a4b8c".`;
+*📊 VER RELATÓRIOS:*
+› \`resumo da semana\`
+› \`meus gastos\`
+› \`gráfico das plataformas\`
+
+Para ver os dados do seu carro, digite \`meu carro\`.
+
+Para apagar um registro, use o ID fornecido: "apagar #a4b8c". Você também pode apagar itens pela lista detalhada dos relatórios.`;
   
   sendOrLogMessage(twiml, message);
 }

@@ -2,6 +2,11 @@ import "dotenv/config";
 import express from "express";
 import rateLimit from "express-rate-limit";
 import rateLimitMongo from "rate-limit-mongo";
+// Importa nossas funções do banco de dados e outros módulos.
+import { connectToDatabase } from "./src/config/database.js";
+import webhookRouter from "./src/routes/webhook.js";
+import { startReminderJob } from "./src/jobs/reminderJob.js";
+import { startTurnReminderJob } from './src/jobs/turnReminderJob.js';
 
 // Bloco de verificação de variáveis de ambiente no início de tudo.
 const requiredEnvVars = [
@@ -23,13 +28,7 @@ for (const varName of requiredEnvVars) {
   }
 }
 
-// Importa nossas funções do banco de dados e outros módulos.
-import {
-  connectToDatabase,
-  getMongooseConnection,
-} from "./src/config/database.js";
-import webhookRouter from "./src/routes/webhook.js";
-import { startReminderJob } from "./src/jobs/reminderJob.js";
+
 
 const app = express();
 app.use("/images", express.static("/tmp"));
@@ -69,6 +68,7 @@ async function startServer() {
 
     // 4. Inicia os jobs agendados.
     startReminderJob();
+    startTurnReminderJob();
 
     // 5. Inicia o servidor para escutar por requisições.
     const PORT = process.env.PORT || 3000;

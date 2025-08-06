@@ -87,6 +87,8 @@ export async function interpretUserMessage(message, currentDate) {
     - "start_turn": Iniciar turno de trabalho.
     - "end_turn": Encerrar turno de trabalho.
     - "submit_turn_income": O usuário está informando os ganhos detalhados do turno.
+    - "set_turn_reminder": O usuário quer definir um horário para o lembrete diário de turno.
+    - "set_turn_goal": O usuário quer definir uma meta de ganhos para o turno.
     - "unknown": A intenção não se encaixa nas anteriores.
 
   2. REGRAS PARA EXTRAÇÃO DE DADOS EM:
@@ -103,7 +105,8 @@ export async function interpretUserMessage(message, currentDate) {
       - description: A descrição do gasto.
       - CLASSIFIQUE a categoria em uma das seguintes:
         - 'Recarga Elétrica', 'Manutenção (Pneus/Freios)', 'Manutenção Corretiva', 'Manutenção Preventiva', 'Limpeza e Estética', 'Acessórios e Equipamentos', 'Software/Assinaturas do Veículo', 'Seguro', 'Parcela do Aluguel/Financiamento', 'IPVA e Licenciamento', 'Multas', 'Pedágio', 'Estacionamento', 'Alimentação/Água', 'Plano de Celular/Internet', 'Contabilidade/MEI', 'Moradia (Aluguel, Condomínio)', 'Contas (Água, Luz, Gás)', 'Educação', 'Saúde (Plano, Farmácia)', 'Lazer e Entretenimento', 'Compras Pessoais', 'Outros'.
-
+      - Se a categoria for 'Recarga Elétrica', extraia também o campo 'kwh' (number) se ele for mencionado.
+    
     2d. "add_income":
       - Esta intenção é para registrar ganhos AVULSOS, como gorjetas e bônus.
       - Extraia 'amount', 'description', 'category' (apenas 'Gorjeta', 'Bônus', 'Outros') e 'source'.
@@ -137,16 +140,13 @@ export async function interpretUserMessage(message, currentDate) {
      }
 
   EXEMPLOS:
-  - User: "iniciar turno 95430 km"
-    Response: { "intent": "start_turn", "data": { "mileage": 95430 } }
-  - User: "comecei a rodar com 95.430km"
-    Response: { "intent": "start_turn", "data": { "mileage": 95430 } }
-  - User: "encerrar turno 95600km"
-    Response: { "intent": "end_turn", "data": { "mileage": 95600 } }
-  - User: "parei com 95.600"
-    Response: { "intent": "end_turn", "data": { "mileage": 95600 } }
+
   - User: "40 na recarga"
     Response: { "intent": "add_expense", "data": { "amount": 40, "description": "recarga", "category": "Recarga Elétrica" } }
+  - User: "recarga de 10kWh por 12 reais"
+    Response: { "intent": "add_expense", "data": { "amount": 12, "description": "recarga", "category": "Recarga Elétrica", "kwh": 10 } }
+  - User: "gastei 30 reais numa recarga de 15kWh"
+    Response: { "intent": "add_expense", "data": { "amount": 30, "description": "recarga", "category": "Recarga Elétrica", "kwh": 15 } }
   - User: "gastei 1200 com o aluguel de casa"
     Response: { "intent": "add_expense", "data": { "amount": 1200, "description": "aluguel de casa", "category": "Moradia (Aluguel, Condomínio)" } }
   - User: "paguei 85 na farmácia"
@@ -154,6 +154,7 @@ export async function interpretUserMessage(message, currentDate) {
   
   - User: "ganhei 20 de gorjeta"
     Response: { "intent": "add_income", "data": { "amount": 20, "description": "gorjeta", "category": "Gorjeta", "source": "Outros" } }
+  
   - User: "300 na z-ev em 12 corridas, 150 na 99 em 7 corridas"
     Response: { "intent": "submit_turn_income", "data": { "incomes": [{ "source": "Z-EV", "amount": 300, "count": 12 }, { "source": "99pop", "amount": 150, "count": 7 }] } }
   - User: "180 na uber em 8 corridas, 90 indrive em 4"
@@ -208,6 +209,23 @@ export async function interpretUserMessage(message, currentDate) {
     Response: { "intent": "add_reminder", "data": { "description": "pagar seguro", "date": "${tomorrowISO}T15:00:00", "type": "Pagamento" } }
   - User: "lembrete pagar manutenção dia 15 do mês que vem"
     Response: { "intent": "add_reminder", "data": { "description": "pagar manutenção", "date": "${nextMonthExampleISO.slice(0, 10)}T09:00:00", "type": "Manutenção" } }
+
+  - User: "iniciar turno 95430 km"
+    Response: { "intent": "start_turn", "data": { "mileage": 95430 } }
+  - User: "comecei a rodar com 95.430km"
+    Response: { "intent": "start_turn", "data": { "mileage": 95430 } }
+  - User: "encerrar turno 95600km"
+    Response: { "intent": "end_turn", "data": { "mileage": 95600 } }
+  - User: "parei com 95.600"
+    Response: { "intent": "end_turn", "data": { "mileage": 95600 } }
+  - User: "me lembre de iniciar o turno todo dia às 8"
+    Response: { "intent": "set_turn_reminder", "data": { "time": "08:00" } }
+  - User: "quero lembrete de turno 7h30"
+    Response: { "intent": "set_turn_reminder", "data": { "time": "07:30" } }
+  - User: "meta de hoje 300 reais"
+    Response: { "intent": "set_turn_goal", "data": { "amount": 300 } }
+  - User: "quero fazer 450 hoje"
+    Response: { "intent": "set_turn_goal", "data": { "amount": 450 } }
   
   - User: "remover #a4b8c"
     Response: { "intent": "delete_transaction", "data": { "messageId": "a4b8c" } }

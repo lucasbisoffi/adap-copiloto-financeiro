@@ -11,6 +11,12 @@ const userStatsSchema = new mongoose.Schema(
     isTurnActive: { type: Boolean, default: false },
     currentTurnStartMileage: { type: Number, default: 0 },
     currentTurnStartDate: { type: Date },
+    turnStartReminderTime: { type: String, default: null }, //lembrete para iniciar o turno
+    // Armazena a meta do turno atual e controla a notificação.
+    currentTurnGoal: {
+      amount: { type: Number },
+      isNotified: { type: Boolean, default: false }
+    },
 
     vehicleId: {
       type: mongoose.Schema.Types.ObjectId,

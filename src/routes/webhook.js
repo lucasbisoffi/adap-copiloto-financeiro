@@ -358,7 +358,7 @@ router.post("/", async (req, res) => {
         twiml,
         "Ok, registrando seus ganhos e calculando o desempenho do turno... 🏁"
       );
-      finalizeResponse(); 
+      finalizeResponse();
 
       try {
         const interpretation = await interpretUserMessage(
@@ -373,7 +373,7 @@ router.post("/", async (req, res) => {
           interpretation.intent === "submit_turn_income" &&
           interpretation.data.incomes
         ) {
-          const turnIncomes = interpretation.data.incomes; 
+          const turnIncomes = interpretation.data.incomes;
 
           for (const incomeData of turnIncomes) {
             const newIncome = new Income({
@@ -408,11 +408,45 @@ router.post("/", async (req, res) => {
           }
         }
 
+        // <<< INÍCIO DA LÓGICA DE VERIFICAÇÃO DE META >>>
+        // Este é o local ideal. Já temos o total de ganhos do turno.
+
+        // Primeiro, buscamos os dados mais recentes do usuário líder, que contém a meta.
+        const leaderStats = await UserStats.findOne({
+          userId: currentState.turnData.effectiveUserId,
+        });
+
+        // Verificamos se existe uma meta para o turno atual e se a notificação ainda não foi enviada.
+        if (
+          leaderStats.currentTurnGoal &&
+          leaderStats.currentTurnGoal.amount > 0 &&
+          !leaderStats.currentTurnGoal.isNotified
+        ) {
+          // Comparamos o total de ganhos com a meta.
+          if (totalTurnIncome >= leaderStats.currentTurnGoal.amount) {
+            // Se a meta foi atingida, enviamos a mensagem de parabéns IMEDIATAMENTE.
+            // Usamos 'sendTextMessage' pois estamos num processo assíncrono.
+            await sendTextMessage(
+              userId,
+              `🎉 Parabéns! Você bateu sua meta de R$ ${leaderStats.currentTurnGoal.amount.toFixed(
+                2
+              )}! Todo ganho a partir de agora é bônus! 🚀`
+            );
+
+            // Atualizamos o status para não notificar de novo.
+            await UserStats.updateOne(
+              { userId: currentState.turnData.effectiveUserId },
+              { $set: { "currentTurnGoal.isNotified": true } }
+            );
+          }
+        }
+        // <<< FIM DA LÓGICA DE VERIFICAÇÃO DE META >>>
+
         const { turnData } = currentState;
 
         const expenses = await Expense.find({
           userId: turnData.effectiveUserId,
-          date: { $gte: turnData.startDate },
+          date: { $gte: turnData.startDate, $lte: turnData.endDate },
         });
         const totalExpense = expenses.reduce((sum, doc) => sum + doc.amount, 0);
 
@@ -421,7 +455,8 @@ router.post("/", async (req, res) => {
           turnData.distanceTraveled > 0
             ? totalTurnIncome / turnData.distanceTraveled
             : 0;
-        const earningsPerRace = totalRaces > 0 ? totalTurnIncome / totalRaces : 0;
+        const earningsPerRace =
+          totalRaces > 0 ? totalTurnIncome / totalRaces : 0;
 
         const newTurn = new Turn({
           userId: turnData.effectiveUserId,
@@ -455,16 +490,21 @@ router.post("/", async (req, res) => {
         let summaryMessage = `*Resumo do seu Turno* 🏁\n\n`;
         summaryMessage += `💰 *Ganhos:* R$ ${totalTurnIncome.toFixed(2)}\n`;
         if (totalRaces > 0) {
-          summaryMessage += ` Races: ${totalRaces} corridas\n`;
+          // CORREÇÃO: Adicionando emoji e negrito para consistência.
+          summaryMessage += `🏁 *Corridas:* ${totalRaces}\n`;
         }
         summaryMessage += `💸 *Gastos:* R$ ${totalExpense.toFixed(2)}\n`;
         summaryMessage += `✅ *Lucro:* R$ ${totalProfit.toFixed(2)}\n\n`;
         summaryMessage += `*Métricas de Desempenho:*\n`;
         summaryMessage += `› *R$/km rodado:* R$ ${earningsPerKm.toFixed(2)}\n`;
         if (earningsPerRace > 0) {
-          summaryMessage += `› *Média p/ corrida:* R$ ${earningsPerRace.toFixed(2)}\n`;
+          summaryMessage += `› *Média p/ corrida:* R$ ${earningsPerRace.toFixed(
+            2
+          )}\n`;
         }
-        summaryMessage += `› *Distância total:* ${turnData.distanceTraveled.toFixed(1)} km`;
+        summaryMessage += `› *Distância total:* ${turnData.distanceTraveled.toFixed(
+          1
+        )} km`;
 
         await sendChunkedMessage(userId, summaryMessage);
       } catch (error) {
@@ -536,6 +576,7 @@ router.post("/", async (req, res) => {
               isTurnActive: true,
               currentTurnStartMileage: mileage,
               currentTurnStartDate: startTime,
+              currentTurnGoal: null,
             },
           }
         );
@@ -583,28 +624,83 @@ router.post("/", async (req, res) => {
         ) {
           sendOrLogMessage(
             twiml,
-            `A quilometragem final parece inválida. Ela deve ser um número maior que a quilometragem inicial de *${turnContextStats.currentTurnStartMileage.toLocaleString("pt-BR")} km*.`
+            `A quilometragem final parece inválida. Ela deve ser um número maior que a quilometragem inicial de *${turnContextStats.currentTurnStartMileage.toLocaleString(
+              "pt-BR"
+            )} km*.`
           );
           break;
         }
-        
+
         conversationState[userId] = {
-            flow: 'awaiting_turn_income',
-            turnData: {
-                effectiveUserId,
-                vehicleId: turnContextStats.vehicleId,
-                startDate: turnContextStats.currentTurnStartDate,
-                endDate: new Date(),
-                startMileage: turnContextStats.currentTurnStartMileage,
-                endMileage,
-                distanceTraveled: endMileage - turnContextStats.currentTurnStartMileage
-            }
+          flow: "awaiting_turn_income",
+          turnData: {
+            effectiveUserId,
+            vehicleId: turnContextStats.vehicleId,
+            startDate: turnContextStats.currentTurnStartDate,
+            endDate: new Date(),
+            startMileage: turnContextStats.currentTurnStartMileage,
+            endMileage,
+            distanceTraveled:
+              endMileage - turnContextStats.currentTurnStartMileage,
+          },
         };
-        
-        sendOrLogMessage(twiml, "🏁 Turno encerrado!\n\nAgora, por favor, me informe seus ganhos e o número de corridas por plataforma.\n\n*Exemplo:* `250 na z-ev em 10 corridas, 120 na uber em 5 corridas`");
-        
+
+        sendOrLogMessage(
+          twiml,
+          "🏁 Turno encerrado!\n\nAgora, por favor, me informe seus ganhos e o número de corridas por plataforma.\n\n*Exemplo:* `250 na z-ev em 10 corridas, 120 na uber em 5 corridas`"
+        );
+
         break;
       }
+      case "set_turn_goal": {
+        if (!userStats.isTurnActive) {
+          sendOrLogMessage(
+            twiml,
+            "Você precisa iniciar um turno antes de definir uma meta! 😉"
+          );
+          break;
+        }
+        const { amount } = interpretation.data;
+        if (!amount || amount <= 0) {
+          sendOrLogMessage(
+            twiml,
+            "Não entendi o valor da meta. Tente de novo. Ex: `meta de hoje 350`"
+          );
+          break;
+        }
+
+        await UserStats.updateOne(
+          { userId },
+          { $set: { currentTurnGoal: { amount, isNotified: false } } }
+        );
+        sendOrLogMessage(
+          twiml,
+          `🎯 Meta definida! Vou te avisar quando você atingir *R$ ${amount.toFixed(
+            2
+          )}* em ganhos neste turno.`
+        );
+        break;
+      } // adicionado
+      case "set_turn_reminder": {
+        const { time } = interpretation.data;
+        if (!time || !/^\d{2}:\d{2}$/.test(time)) {
+          sendOrLogMessage(
+            twiml,
+            "Não entendi o horário. Por favor, tente de novo. Ex: `lembrete de turno 8h`"
+          );
+          break;
+        }
+
+        await UserStats.updateOne(
+          { userId },
+          { $set: { turnStartReminderTime: time } }
+        );
+        sendOrLogMessage(
+          twiml,
+          `✅ Prontinho! Vou te lembrar de iniciar seu turno todos os dias às *${time}*.`
+        );
+        break;
+      } // adicionado
       case "get_vehicle_details": {
         if (isUserDependent) {
           sendOrLogMessage(
@@ -631,12 +727,15 @@ router.post("/", async (req, res) => {
       }
       case "add_income": {
         let { amount, description, category, source } = interpretation.data;
-        
-        if (category === 'Corrida') {
-            sendOrLogMessage(twiml, "Para registrar os ganhos de corridas, primeiro encerre seu turno com o comando `encerrar turno [km final]`.");
-            break;
+
+        if (category === "Corrida") {
+          sendOrLogMessage(
+            twiml,
+            "Para registrar os ganhos de corridas, primeiro encerre seu turno com o comando `encerrar turno [km final]`."
+          );
+          break;
         }
-        
+
         const newIncome = new Income({
           userId: effectiveUserId,
           amount,
@@ -656,20 +755,33 @@ router.post("/", async (req, res) => {
         break;
       }
       case "add_expense": {
-        const { amount, description, category } = interpretation.data;
+        const { amount, description, category, kwh } = interpretation.data;
 
         const newExpense = new Expense({
           userId: effectiveUserId,
           amount,
           description,
           category,
+          kwh,
           date: new Date(),
           messageId: generateId(),
         });
 
         await newExpense.save();
         devLog("Nova despesa salva:", newExpense);
-        sendExpenseAddedMessage(twiml, newExpense);
+        let expenseMessage = `💸 *Gasto anotado!*
+📌 ${
+          newExpense.description.charAt(0).toUpperCase() +
+          newExpense.description.slice(1)
+        } (_${newExpense.category}_)
+❌ *R$ ${newExpense.amount.toFixed(2)}*`;
+
+        if (newExpense.kwh && newExpense.kwh > 0) {
+          expenseMessage += `\n⚡️ *Recarga:* ${newExpense.kwh} kWh`;
+        }
+
+        expenseMessage += `\n🆔 #${newExpense.messageId}`;
+        sendOrLogMessage(twiml, expenseMessage);
 
         await UserStats.findOneAndUpdate(
           { userId: effectiveUserId },
@@ -903,18 +1015,12 @@ router.post("/", async (req, res) => {
 
         finalizeResponse();
 
-        const { month, monthName, category, source } =
-          previousData;
+        const { month, monthName, category, source } = previousData;
         devLog(`Buscando detalhes para: Tipo=${type}, Mês=${month}`);
 
         const detailsMessage =
           type === "income"
-            ? await getIncomeDetails(
-                effectiveUserId,
-                month,
-                monthName,
-                source
-              )
+            ? await getIncomeDetails(effectiveUserId, month, monthName, source)
             : await getExpenseDetails(
                 effectiveUserId,
                 month,
