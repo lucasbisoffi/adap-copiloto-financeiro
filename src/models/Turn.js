@@ -1,4 +1,3 @@
-// src/models/Turn.js
 import mongoose from "mongoose";
 
 const turnSchema = new mongoose.Schema({
@@ -13,6 +12,8 @@ const turnSchema = new mongoose.Schema({
   totalExpense: { type: Number, default: 0 },
   totalProfit: { type: Number, default: 0 },
   earningsPerKm: { type: Number, default: 0 },
+  
+  racesCount: { type: Number, default: 0 }
 });
 
 export default mongoose.model("Turn", turnSchema);
