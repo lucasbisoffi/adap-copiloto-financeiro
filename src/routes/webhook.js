@@ -27,7 +27,6 @@ import {
 import { generatePlatformChart } from "../services/chartService.js";
 import { sendReportImage } from "../services/twilioService.js";
 import {
-  getPeriodSummary,
   getProfitReportData,
   getTotalReminders,
   getExpenseDetails,
@@ -78,11 +77,9 @@ router.post("/", async (req, res) => {
     }
     devLog(`Mensagem de ${userId} para processar: "${messageToProcess}"`);
 
-    // Buscamos o usuário e o estado da conversa PRIMEIRO.
     let userStats = await UserStats.findOne({ userId });
     const currentState = conversationState[userId];
 
-    // Lógica para CANCELAR (prioridade máxima)
     if (messageToProcess.toLowerCase().trim() === "cancelar") {
       if (currentState) {
         delete conversationState[userId];
@@ -142,14 +139,12 @@ router.post("/", async (req, res) => {
         currentState.flow === "motorcycle_registration" ||
         currentState.flow === "ev_registration")
     ) {
-      // O 'userStats' já foi carregado, então a 'config' pode ser definida com segurança.
       let config;
       if (currentState.flow === "motorcycle_registration") {
         config = PROFILE_CONFIG.motoboy;
       } else if (currentState.flow === "ev_registration") {
         config = PROFILE_CONFIG.zev_driver;
       } else {
-        // vehicle_registration
         config = PROFILE_CONFIG.driver;
       }
 
@@ -276,7 +271,6 @@ router.post("/", async (req, res) => {
           if (isConfirmation) {
             currentState.mileage = currentState.tempData;
 
-            // Lógica de salvamento separada por fluxo
             if (currentState.flow === "motorcycle_registration") {
               const newMotorcycle = new Motorcycle({
                 userId,
@@ -371,7 +365,6 @@ router.post("/", async (req, res) => {
       const choice = messageToProcess.trim().toLowerCase();
       const onboardingStep = currentState?.onboardingStep;
 
-      // Se o usuário está respondendo à primeira pergunta (principal ou dependente)
       if (onboardingStep === "awaiting_type") {
         if (["1", "2", "3"].includes(choice)) {
           let profileType;
@@ -432,52 +425,156 @@ router.post("/", async (req, res) => {
       return finalizeResponse();
     }
 
-    if (!userStats.welcomedToV2) {
-      const updateMessage =
-        '🎉 *Novidade no ADAP!* 🎉\n\nAgora o seu copiloto também ajuda *entregadores de moto*!\n\nVocê pode adicionar um perfil de motoboy, ou trocar entre seus perfis a qualquer momento. Experimente dizer:\n\n› _"adicionar perfil de moto"_\n› _"mudar para moto"_';
-      sendOrLogMessage(twiml, updateMessage);
-      userStats.welcomedToV2 = true;
-      await userStats.save();
+    // LÓGICA DE PERFIL E DEPENDENTE UNIFICADA
+    if (!userStats) {
+      sendOrLogMessage(twiml, "Olá! Parece que você é novo por aqui. Diga 'oi' novamente para começar.");
+      return finalizeResponse();
     }
 
-    // LÓGICA DO USUÁRIO EFETIVO =======================
+    let activeProfile = userStats.activeProfile;
     let effectiveUserId = userId;
     let isUserDependent = false;
-    let activeProfileForRequest = userStats.activeProfile;
 
     if (userStats.isDependent && userStats.leaderUserId) {
       effectiveUserId = userStats.leaderUserId;
       isUserDependent = true;
-      devLog(
-        `Usuário ${userId} é um dependente. Usando ID do líder: ${effectiveUserId}`
-      );
-
+      devLog(`Usuário ${userId} é um dependente. Usando ID do líder: ${effectiveUserId}`);
+      
       const leaderStats = await UserStats.findOne({ userId: effectiveUserId });
       if (leaderStats) {
-        activeProfileForRequest = leaderStats.activeProfile;
+        activeProfile = leaderStats.activeProfile; 
       } else {
-        activeProfileForRequest = null;
+        sendOrLogMessage(twiml, "Opa! Não encontrei os dados do seu líder. Por favor, peça para ele verificar a conta.");
+        return finalizeResponse();
       }
     }
-    // ================================================
+
+    if (!activeProfile) {
+        sendOrLogMessage(twiml, "Seu perfil ainda não está totalmente configurado. Peça ao seu líder para definir um perfil de trabalho ativo.");
+        return finalizeResponse();
+    }
+    
+    const activeProfileConfig = PROFILE_CONFIG[activeProfile];
+
+    // <<< FLUXO DE GANHOS DE TURNO (VERSÃO FINAL E CORRIGIDA) >>>
+    if (currentState && currentState.flow === "awaiting_turn_income") {
+      const { turnData } = currentState;
+
+      const interpretation = await (async () => {
+        if (activeProfile === "zev_driver") return interpretZEVMessage(messageToProcess, new Date().toISOString());
+        if (activeProfile === "motoboy") return interpretMotoboyMessage(messageToProcess, new Date().toISOString());
+        return interpretDriverMessage(messageToProcess, new Date().toISOString());
+      })();
+
+      if (interpretation.intent !== "submit_turn_income") {
+        sendOrLogMessage(twiml, "Não entendi o formato dos ganhos. Por favor, tente novamente.\n\n*Exemplo:* `uber 100 5, 99pop 80 4`");
+        return finalizeResponse();
+      }
+
+      sendOrLogMessage(twiml, "Ok, registrando seus ganhos e calculando o desempenho do turno... 🏁");
+      finalizeResponse();
+
+      try {
+        let totalTurnIncome = 0;
+        let totalRaces = 0;
+
+        if (interpretation.data.incomes) {
+          const turnIncomes = interpretation.data.incomes;
+          for (const incomeData of turnIncomes) {
+            let categoryForIncome = activeProfileConfig.incomeTerm;
+            if (activeProfile === 'motoboy') {
+              categoryForIncome = incomeData.incomeType || 'Entrega';
+            }
+            const newIncome = new Income({
+              userId: turnData.effectiveUserId,
+              amount: incomeData.amount,
+              description: `Ganhos da ${incomeData.source}`,
+              category: categoryForIncome,
+              source: incomeData.source,
+              count: incomeData.count || 0,
+              profileType: activeProfile,
+              date: turnData.endDate,
+              messageId: customAlphabet("1234567890abcdef", 5)(),
+            });
+            await newIncome.save();
+            totalTurnIncome += incomeData.amount;
+            totalRaces += incomeData.count || 0;
+          }
+        }
+        
+        const leaderStats = await UserStats.findOne({ userId: turnData.effectiveUserId });
+        if (leaderStats.currentTurnGoal && !leaderStats.currentTurnGoal.isNotified && totalTurnIncome >= leaderStats.currentTurnGoal.amount) {
+          await sendChunkedMessage(userId, `🎉 Parabéns! Você bateu sua meta de R$ ${leaderStats.currentTurnGoal.amount.toFixed(2)}!`);
+          await UserStats.updateOne({ userId: turnData.effectiveUserId }, { $set: { "currentTurnGoal.isNotified": true } });
+        }
+
+        const expenses = await Expense.find({ userId: turnData.effectiveUserId, profileType: activeProfile, date: { $gte: turnData.startDate, $lte: turnData.endDate }});
+        const totalExpense = expenses.reduce((sum, doc) => sum + doc.amount, 0);
+        const totalProfit = totalTurnIncome - totalExpense;
+        const earningsPerKm = turnData.distanceTraveled > 0 ? totalTurnIncome / turnData.distanceTraveled : 0;
+        const earningsPerRace = totalRaces > 0 ? totalTurnIncome / totalRaces : 0;
+
+        const newTurn = new Turn({
+          userId: turnData.effectiveUserId, 
+          profileType: turnData.activeProfile, 
+          startDate: turnData.startDate,
+          endDate: turnData.endDate,
+          startMileage: turnData.startMileage,
+          endMileage: turnData.endMileage,
+          distanceTraveled: turnData.distanceTraveled,
+          totalIncome: totalTurnIncome,
+          totalExpense: totalExpense,
+          totalProfit: totalProfit,
+          earningsPerKm: earningsPerKm,
+          racesCount: totalRaces,
+        });
+        await newTurn.save();
+        
+        await UserStats.updateOne({ userId: turnData.effectiveUserId }, { $set: { isTurnActive: false, currentTurnStartMileage: 0, currentTurnStartDate: null }});
+        
+        let vehicleModel;
+        switch(activeProfile) {
+            case 'driver': vehicleModel = Vehicle; break;
+            case 'motoboy': vehicleModel = Motorcycle; break;
+            case 'zev_driver': vehicleModel = ElectricVehicle; break;
+        }
+        if (vehicleModel && turnData.vehicleId) {
+            await vehicleModel.updateOne({ _id: turnData.vehicleId }, { $set: { currentMileage: turnData.endMileage } });
+        }
+
+        let summaryMessage = `*Resumo do seu Turno* 🏁\n\n`;
+        summaryMessage += `💰 *Ganhos:* R$ ${totalTurnIncome.toFixed(2)}\n`;
+        if (totalRaces > 0) summaryMessage += `🏁 *${activeProfileConfig.incomeTerm === 'Entrega' ? 'Entregas/Corridas' : 'Corridas'}:* ${totalRaces}\n`;
+        summaryMessage += `💸 *Gastos:* R$ ${totalExpense.toFixed(2)}\n`;
+        summaryMessage += `✅ *Lucro:* R$ ${totalProfit.toFixed(2)}\n\n`;
+        summaryMessage += `*Métricas de Desempenho:*\n`;
+        summaryMessage += `› *R$/km rodado:* R$ ${earningsPerKm.toFixed(2)}\n`;
+        if (earningsPerRace > 0) summaryMessage += `› *Média p/ registro:* R$ ${earningsPerRace.toFixed(2)}\n`;
+        summaryMessage += `› *Distância total:* ${turnData.distanceTraveled.toFixed(1)} km`;
+        await sendChunkedMessage(userId, summaryMessage);
+
+      } catch (error) { devLog("ERRO CRÍTICO ao finalizar turno:", error); } 
+      finally { delete conversationState[userId]; }
+      return;
+    }
 
     const generateId = customAlphabet("1234567890abcdef", 5);
     const todayISO = new Date().toISOString();
 
     let interpretation;
 
-    if (activeProfileForRequest === "zev_driver") {
+    if (activeProfile === "zev_driver")
       interpretation = await interpretZEVMessage(messageToProcess, todayISO);
-    } else if (activeProfileForRequest === "motoboy") {
+    else if (activeProfile === "motoboy")
       interpretation = await interpretMotoboyMessage(
         messageToProcess,
         todayISO
       );
-    } else {
+    else
       interpretation = await interpretDriverMessage(messageToProcess, todayISO);
-    }
+
     devLog(
-      `Intenção da IA para perfil '${userStats.activeProfile}':`,
+      `Intenção da IA para perfil '${activeProfile}':`,
       interpretation.intent
     );
 
@@ -564,29 +661,42 @@ router.post("/", async (req, res) => {
         break;
       }
       case "start_turn": {
-        let turnContextStats = userStats;
-        if (isUserDependent) {
-          turnContextStats = await UserStats.findOne({ userId: effectiveUserId });
-        }
-        
-        if (turnContextStats.activeProfile !== "zev_driver") {
-          sendOrLogMessage(twiml, "Esta funcionalidade está disponível apenas para o perfil Z-EV. ⚡");
+        if (userStats.isTurnActive) {
+          sendOrLogMessage(twiml, "Você já está com um turno em andamento. Para iniciar um novo, primeiro encerre o atual.");
           break;
         }
-
-        if (turnContextStats.isTurnActive) {
-          sendOrLogMessage(twiml, "Você (ou seu líder) já está com um turno em andamento. Para iniciar um novo, primeiro encerre o atual.");
-          break;
-        }
-
         const { mileage } = interpretation.data;
-
         if (!mileage || typeof mileage !== "number" || mileage < 0) {
-          sendOrLogMessage(twiml, "Não entendi a quilometragem. Por favor, tente novamente. Ex: *iniciar turno 12345 km*");
+          sendOrLogMessage(twiml, "Não entendi a quilometragem. Ex: `iniciar turno 12345 km`");
           break;
         }
 
-        const startTime = new Date();
+        let vehicleModel, vehicleId;
+        switch (activeProfile) {
+          case "driver":
+            vehicleModel = Vehicle;
+            vehicleId = userStats.activeVehicleId;
+            break;
+          case "motoboy":
+            vehicleModel = Motorcycle;
+            vehicleId = userStats.activeMotorcycleId;
+            break;
+          case "zev_driver":
+            vehicleModel = ElectricVehicle;
+            vehicleId = userStats.activeEVId;
+            break;
+        }
+
+        if (vehicleModel && vehicleId) {
+          const currentVehicle = await vehicleModel.findById(vehicleId);
+          if (currentVehicle && mileage < currentVehicle.currentMileage) {
+            sendOrLogMessage(
+              twiml,
+              `Opa! A quilometragem informada (*${mileage.toLocaleString("pt-BR")} km*) é menor que a última registrada (*${currentVehicle.currentMileage.toLocaleString("pt-BR")} km*). Por favor, verifique e tente novamente.`
+            );
+            break; 
+          }
+        }
 
         await UserStats.updateOne(
           { userId: effectiveUserId },
@@ -594,124 +704,127 @@ router.post("/", async (req, res) => {
             $set: {
               isTurnActive: true,
               currentTurnStartMileage: mileage,
-              currentTurnStartDate: startTime,
+              currentTurnStartDate: new Date(),
+              currentTurnGoal: null,
             },
           }
         );
 
-        await ElectricVehicle.updateOne(
-          { _id: turnContextStats.activeEVId },
-          { $set: { currentMileage: mileage } }
-        );
+        if (vehicleModel && vehicleId) {
+          await vehicleModel.updateOne(
+            { _id: vehicleId },
+            { $set: { currentMileage: mileage } }
+          );
+        }
 
-        const formattedTime = startTime.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: TIMEZONE });
         sendOrLogMessage(
           twiml,
-          `✅ Turno iniciado às *${formattedTime}* com *${mileage.toLocaleString("pt-BR")} km*.\n\nBoas corridas! ⚡`
+          `✅ Turno iniciado com ${mileage.toLocaleString("pt-BR")} km. Boas corridas!`
         );
         break;
       }
       case "end_turn": {
-        let turnContextStats = userStats; 
-        
-        if (isUserDependent) {
-          turnContextStats = await UserStats.findOne({ userId: effectiveUserId });
-        }
-        
-        if (turnContextStats.activeProfile !== "zev_driver") {
-          sendOrLogMessage(twiml, "Esta funcionalidade está disponível apenas para o perfil Z-EV. ⚡");
+        if (!userStats.isTurnActive) {
+          sendOrLogMessage(twiml, "Você não tem um turno ativo no momento.");
           break;
         }
-
-        if (!turnContextStats.isTurnActive) { 
-          sendOrLogMessage(twiml, "Você (ou seu líder) não tem um turno ativo no momento.");
-          break;
-        }
-
         const { mileage: endMileage } = interpretation.data;
-
-        if (!endMileage || typeof endMileage !== "number" || endMileage < turnContextStats.currentTurnStartMileage) { 
-          sendOrLogMessage(twiml, `A quilometragem final parece inválida. Ela deve ser um número maior que a quilometragem inicial de *${turnContextStats.currentTurnStartMileage.toLocaleString("pt-BR")} km*.`);
+        if (
+          !endMileage ||
+          typeof endMileage !== "number" ||
+          endMileage < userStats.currentTurnStartMileage
+        ) {
+          sendOrLogMessage(
+            twiml,
+            `A quilometragem final parece inválida. Deve ser maior que a inicial de ${userStats.currentTurnStartMileage.toLocaleString(
+              "pt-BR"
+            )} km.`
+          );
           break;
         }
 
-        sendOrLogMessage(twiml, "🏁 Ok! Encerrando seu turno e calculando seu desempenho... Um momento.");
-        finalizeResponse();
-
-        try {
-          const endDate = new Date();
-          const distanceTraveled = endMileage - turnContextStats.currentTurnStartMileage; 
-
-          const [incomes, expenses] = await Promise.all([
-            Income.find({
-              userId: effectiveUserId,
-              profileType: "zev_driver",
-              date: { $gte: turnContextStats.currentTurnStartDate },
-            }),
-            Expense.find({
-              userId: effectiveUserId,
-              profileType: "zev_driver",
-              date: { $gte: turnContextStats.currentTurnStartDate },
-            }),
-          ]);
-
-          const totalIncome = incomes.reduce((sum, doc) => sum + doc.amount, 0);
-          const totalExpense = expenses.reduce(
-            (sum, doc) => sum + doc.amount,
-            0
-          );
-          const totalProfit = totalIncome - totalExpense;
-          const earningsPerKm =
-            distanceTraveled > 0 ? totalIncome / distanceTraveled : 0;
-
-          const newTurn = new Turn({
-            userId: effectiveUserId,
-            profileType: "zev_driver",
-            startDate: turnContextStats.currentTurnStartDate,
-            endDate,
-            startMileage: turnContextStats.currentTurnStartMileage,
-            endMileage,
-            distanceTraveled,
-            totalIncome,
-            totalExpense,
-            totalProfit,
-            earningsPerKm,
-          });
-          await newTurn.save();
-
-          await UserStats.updateOne(
-            { userId: effectiveUserId },
-            {
-              $set: {
-                isTurnActive: false,
-                currentTurnStartMileage: 0,
-                currentTurnStartDate: null,
-              },
-            }
-          );
-          await ElectricVehicle.updateOne(
-            { _id: userStats.activeEVId },
-            { $set: { currentMileage: endMileage } }
-          );
-
-          let summaryMessage = `*Resumo do seu Turno* 🏁\n\n`;
-          summaryMessage += `🛣️ *Distância:* ${distanceTraveled.toFixed(
-            1
-          )} km\n`;
-          summaryMessage += `💰 *Ganhos:* R$ ${totalIncome.toFixed(2)}\n`;
-          summaryMessage += `💸 *Gastos:* R$ ${totalExpense.toFixed(2)}\n`;
-          summaryMessage += `----------\n`;
-          summaryMessage += `✅ *Lucro:* R$ ${totalProfit.toFixed(2)}\n`;
-          summaryMessage += `📈 *R$/km:* R$ ${earningsPerKm.toFixed(2)}\n`;
-
-          await sendChunkedMessage(userId, summaryMessage);
-        } catch (error) {
-          devLog("ERRO CRÍTICO ao encerrar turno:", error);
-          await sendChunkedMessage(
-            userId,
-            "❌ Ops! Tive um problema ao calcular o resumo do seu turno. Por favor, tente novamente."
-          );
+        let vehicleId;
+        switch (activeProfile) {
+          case "driver":
+            vehicleId = userStats.activeVehicleId;
+            break;
+          case "motoboy":
+            vehicleId = userStats.activeMotorcycleId;
+            break;
+          case "zev_driver":
+            vehicleId = userStats.activeEVId;
+            break;
         }
+
+        conversationState[userId] = {
+          flow: "awaiting_turn_income",
+          turnData: {
+            effectiveUserId,
+            vehicleId,
+            activeProfile,
+            startDate: userStats.currentTurnStartDate,
+            endDate: new Date(),
+            startMileage: userStats.currentTurnStartMileage,
+            endMileage,
+            distanceTraveled: endMileage - userStats.currentTurnStartMileage,
+          },
+        };
+
+        sendOrLogMessage(
+          twiml,
+          `🏁 Turno encerrado! Agora, informe seus ganhos.\n\n*Exemplo:* ${activeProfileConfig.incomeExample}`
+        );
+        break;
+      }
+      case "set_turn_goal": {
+        if (!userStats.isTurnActive) {
+          sendOrLogMessage(
+            twiml,
+            "Você precisa iniciar um turno antes de definir uma meta! 😉"
+          );
+          break;
+        }
+        const { amount } = interpretation.data;
+        if (!amount || amount <= 0) {
+          sendOrLogMessage(
+            twiml,
+            "Não entendi o valor da meta. Tente de novo. Ex: `meta de hoje 350`"
+          );
+          break;
+        }
+
+        await UserStats.updateOne(
+          { userId: effectiveUserId },
+          { $set: { currentTurnGoal: { amount, isNotified: false } } }
+        );
+        sendOrLogMessage(
+          twiml,
+          `🎯 Meta definida! Vou te avisar quando você atingir *R$ ${amount.toFixed(
+            2
+          )}* neste turno.`
+        );
+        break;
+      }
+      case "set_turn_reminder": {
+        const { time } = interpretation.data;
+
+        if (!time || !/^\d{2}:\d{2}$/.test(time)) {
+          sendOrLogMessage(
+            twiml,
+            "Não entendi o horário. Por favor, tente de novo. Ex: `lembrete de turno 8h` ou `lembrete turno 19:30`"
+          );
+          break;
+        }
+
+        await UserStats.updateOne(
+          { userId },
+          { $set: { turnStartReminderTime: time } }
+        );
+
+        sendOrLogMessage(
+          twiml,
+          `✅ Prontinho! Vou te lembrar de iniciar seu turno todos os dias às *${time}*.`
+        );
         break;
       }
       case "get_vehicle_details": {
@@ -796,25 +909,42 @@ router.post("/", async (req, res) => {
         sendOrLogMessage(twiml, evMessage);
         break;
       }
+      case "add_expense": {
+        const { amount, description, category, kwh } = interpretation.data;
+        const newExpense = new Expense({
+          userId: effectiveUserId,
+          amount,
+          description,
+          category,
+          kwh: activeProfile === "zev_driver" ? kwh : undefined,
+          profileType: activeProfile,
+          date: new Date(),
+          messageId: generateId(),
+        });
+        await newExpense.save();
+        sendExpenseAddedMessage(twiml, newExpense);
+        await UserStats.findOneAndUpdate(
+          { userId: effectiveUserId },
+          { $inc: { totalSpent: amount } },
+          { upsert: true }
+        );
+        break;
+      }
       case "add_income": {
-        let { amount, description, category, source, tax, distance } =
+        const { amount, description, category, source, distance } =
           interpretation.data;
-        const config = PROFILE_CONFIG[userStats.activeProfile];
 
         if (
           (category === "Corrida" || category === "Entrega") &&
-          (!distance || typeof distance !== "number" || distance <= 0)
+          (!distance || distance <= 0)
         ) {
-          sendOrLogMessage(
-            twiml,
-            `📈 Para registrar sua ${config.incomeTerm}, preciso saber a *quilometragem (km)*.`
-          );
-          break;
-        }
-
-        if (distance && distance > 0) {
-          category = config.incomeTerm;
-          description = config.incomeTerm.toLowerCase();
+          if (activeProfile === "driver" || activeProfile === "zev_driver") {
+            sendOrLogMessage(
+              twiml,
+              `Para registrar uma ${category.toLowerCase()} particular, preciso da quilometragem (km).`
+            );
+            break;
+          }
         }
 
         const newIncome = new Income({
@@ -823,9 +953,8 @@ router.post("/", async (req, res) => {
           description,
           category,
           source,
-          tax,
           distance,
-          profileType: userStats.activeProfile,
+          profileType: activeProfile,
           date: new Date(),
           messageId: generateId(),
         });
@@ -838,50 +967,12 @@ router.post("/", async (req, res) => {
         );
         break;
       }
-      case "add_expense": {
-        const { amount, description, category } = interpretation.data;
-        const newExpense = new Expense({
-          userId: effectiveUserId,
-          amount,
-          description,
-          category,
-          profileType: activeProfileForRequest,
-          date: new Date(),
-          messageId: generateId(),
-        });
-
-        await newExpense.save();
-        devLog("Nova despesa salva:", newExpense);
-        sendExpenseAddedMessage(twiml, newExpense);
-
-        await UserStats.findOneAndUpdate(
-          { userId: effectiveUserId },
-          { $inc: { totalSpent: amount } },
-          { upsert: true }
-        );
-        break;
-      }
       case "get_period_report": {
         const { period, month, monthName } = interpretation.data;
-
-        const reportOptions = {
-          period,
-          month,
-          monthName,
-          activeProfile: activeProfileForRequest,
-        };
-
-        if (!period && !month) {
-          reportOptions.period = "week";
-        }
-
-        const reportData = await getPeriodReport(
-          effectiveUserId,
-          reportOptions
-        );
-
-        sendPeriodReportMessage(twiml, reportData, activeProfileForRequest);
-
+        const reportOptions = { period, month, monthName, activeProfile };
+        if (!period && !month) { reportOptions.period = "week"; }
+        const reportData = await getPeriodReport(effectiveUserId, reportOptions);
+        sendPeriodReportMessage(twiml, reportData, activeProfile);
         break;
       }
       case "generate_platform_chart": {
@@ -901,12 +992,7 @@ router.post("/", async (req, res) => {
           devLog(
             `Buscando dados para o gráfico de plataformas do mês: ${currentMonth}`
           );
-          const reportData = await getIncomesBySource(
-            effectiveUserId,
-            currentMonth,
-            null,
-            activeProfileForRequest
-          );
+          const reportData = await getIncomesBySource(effectiveUserId, currentMonth, null, activeProfile);
 
           if (reportData.length === 0) {
             await sendChunkedMessage(
@@ -953,12 +1039,7 @@ router.post("/", async (req, res) => {
             category || "Todas"
           }`
         );
-        const expenses = await getExpensesByCategory(
-          effectiveUserId,
-          month,
-          category,
-          activeProfileForRequest
-        );
+        const expenses = await getExpensesByCategory(effectiveUserId, month, category, activeProfile);
         if (expenses.length === 0) {
           sendOrLogMessage(
             twiml,
@@ -987,7 +1068,7 @@ router.post("/", async (req, res) => {
           month,
           monthName,
           category,
-          activeProfile: activeProfileForRequest,
+          activeProfile: activeProfile,
         };
         sendOrLogMessage(twiml, message);
         break;
@@ -1011,14 +1092,9 @@ router.post("/", async (req, res) => {
             source || "Todas"
           }`
         );
-        const incomes = await getIncomesBySource(
-          effectiveUserId,
-          month,
-          source,
-          activeProfileForRequest
-        );
+        const incomes = await getIncomesBySource(effectiveUserId, month, source, activeProfile);
 
-        const config = PROFILE_CONFIG[activeProfileForRequest];
+        const config = PROFILE_CONFIG[activeProfile];
         const incomeTermPlural =
           config.incomeTerm === "Entrega" ? "entregas" : "corridas";
 
@@ -1060,7 +1136,7 @@ router.post("/", async (req, res) => {
           month,
           monthName,
           source,
-          activeProfile: activeProfileForRequest,
+          activeProfile: activeProfile,
         };
         sendOrLogMessage(twiml, message);
         break;
@@ -1096,26 +1172,10 @@ router.post("/", async (req, res) => {
 
         finalizeResponse();
 
-        const { month, monthName, category, source, activeProfile } =
-          previousData;
-        devLog(`Buscando detalhes para: Tipo=${type}, Mês=${month}`);
-
-        const detailsMessage =
-          type === "income"
-            ? await getIncomeDetails(
-                effectiveUserId,
-                month,
-                monthName,
-                source,
-                activeProfile
-              )
-            : await getExpenseDetails(
-                effectiveUserId,
-                month,
-                monthName,
-                category,
-                activeProfile
-              );
+        const { month, monthName, category, source, activeProfile: profileFromState } = previousData;
+        const detailsMessage = type === "income"
+            ? await getIncomeDetails(effectiveUserId, month, monthName, source, profileFromState)
+            : await getExpenseDetails(effectiveUserId, month, monthName, category, profileFromState);
 
         await sendChunkedMessage(userId, detailsMessage);
 
@@ -1157,7 +1217,7 @@ router.post("/", async (req, res) => {
         break;
       }
       case "greeting": {
-        sendGreetingMessage(twiml, { activeProfile: activeProfileForRequest });
+        sendGreetingMessage(twiml, { activeProfile: activeProfile });
         break;
       }
       case "add_reminder": {
@@ -1227,11 +1287,11 @@ router.post("/", async (req, res) => {
         break;
       }
       case "instructions": {
-        sendHelpMessage(twiml, { activeProfile: activeProfileForRequest });
+        sendHelpMessage(twiml, { activeProfile: activeProfile });
         break;
       }
       default:
-        sendHelpMessage(twiml, { activeProfile: activeProfileForRequest });
+        sendHelpMessage(twiml, { activeProfile: activeProfile });
         break;
     }
   } catch (err) {

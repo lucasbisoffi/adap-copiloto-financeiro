@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 const dependentRequestSchema = new mongoose.Schema({
-  dependentUserId: { type: String, required: true, unique: true }, // Garante que um usuário só pode fazer um pedido
+  dependentUserId: { type: String, required: true, unique: true },
   leaderPhoneNumber: { type: String, required: true },
   status: { 
     type: String, 

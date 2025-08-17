@@ -11,7 +11,7 @@ export const PROFILE_CONFIG = {
     pronomePossessivo: 'seu',
     generoObjeto: 'dele',
     hasTurnFeature: true,
-    incomeCategories: ['Corrida', 'Gorjeta', 'Bônus', 'Outros'],
+    incomeCategories: ['Corrida', 'Gorjeta', 'Bônus', 'Venda de Produto', 'Serviço Extra', 'Outros'],
     expenseCategories: [
       'Combustível', 'Manutenção', 'Limpeza', 'Alimentação/Água', 'Pedágio',
       'Aluguel do Veículo', 'Parcela do Financiamento', 'Seguro', 'IPVA e Licenciamento',
@@ -35,7 +35,7 @@ export const PROFILE_CONFIG = {
     pronomePossessivo: 'sua',
     generoObjeto: 'dela',
     hasTurnFeature: true,
-    incomeCategories: ['Entrega', 'Corrida', 'Gorjeta', 'Bônus', 'Outros'],
+    incomeCategories: ['Entrega', 'Corrida', 'Gorjeta', 'Bônus', 'Venda de Produto', 'Serviço Extra', 'Outros'],
     expenseCategories: [
       'Manutenção da Moto', 'Combustível', 'Acessórios', 'Aluguel da Moto',
       'Documentação da Moto', 'Plano de Celular', 'Alimentação', 'Limpeza',
@@ -58,7 +58,7 @@ export const PROFILE_CONFIG = {
     pronomePossessivo: 'seu',
     generoObjeto: 'dele',
     hasTurnFeature: true,
-    incomeCategories: ['Corrida', 'Gorjeta', 'Bônus', 'Outros'],
+    incomeCategories: ['Corrida', 'Gorjeta', 'Bônus', 'Venda de Produto', 'Serviço Extra', 'Outros'],
     expenseCategories: [
       'Recarga Elétrica', 'Manutenção (Pneus/Freios)', 'Limpeza', 
       'Alimentação/Água', 'Seguro', 'Parcela do Aluguel/Financiamento', 

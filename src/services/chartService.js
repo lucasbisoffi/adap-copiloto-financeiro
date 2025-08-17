@@ -6,18 +6,16 @@ import { spawn } from "child_process";
 export function generatePlatformChart(reportData, userId) {
   return new Promise((resolve, reject) => {
     const pythonScriptPath = path.resolve("generate_income_platform_chart.py");
-    const tempDir = os.tmpdir(); // Pega o diretório temporário do sistema operacional
+    const tempDir = os.tmpdir();
     
     const dataString = JSON.stringify(reportData);
 
-    // Passamos os argumentos que o script Python espera agora
     const pythonProcess = spawn("python3", [pythonScriptPath, dataString, userId, tempDir]);
 
     let imageUrl = "";
     let errorOutput = "";
 
     pythonProcess.stdout.on("data", (data) => {
-      // O script agora retorna a URL completa do Cloudinary
       imageUrl += data.toString().trim();
     });
 
@@ -33,7 +31,6 @@ export function generatePlatformChart(reportData, userId) {
       if (!imageUrl) {
         return reject(new Error("URL da imagem não foi retornada pelo script Python."));
       }
-      // Resolve com a URL segura do Cloudinary
       resolve(imageUrl);
     });
   });

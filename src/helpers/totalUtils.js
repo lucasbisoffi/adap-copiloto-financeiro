@@ -3,17 +3,15 @@ import Income from "../models/Income.js";
 import Reminder from "../models/Reminder.js";
 
 export async function getTotalReminders(userId) {
-  // Busca lembretes que ainda não venceram e os ordena do mais próximo para o mais distante.
   const reminders = await Reminder.find({
     userId,
     date: { $gte: new Date() },
   }).sort({ date: 1 });
 
   if (reminders.length === 0) {
-    return ""; // Retorna vazio para a mensagem padrão ser exibida
+    return ""; 
   }
 
-  // Formata a data e a hora para o fuso horário do Brasil.
   return reminders
     .map((r) => {
       const formattedDateTime = new Intl.DateTimeFormat("pt-BR", {
@@ -62,8 +60,10 @@ export async function getIncomeDetails(userId, month, monthName, source, activeP
     message += `*${sourceName}*:\n`;
     groupedIncomes[sourceName].forEach((inc) => {
       let itemText;
-      if ((inc.category === "Corrida" || inc.category === "Entrega") && inc.distance) {
-        itemText = `R$ ${inc.amount.toFixed(2)} [${inc.distance} km] (#${inc.messageId})`;
+      if (inc.distance && inc.distance > 0) {
+        itemText = `${inc.description}: R$ ${inc.amount.toFixed(2)} [${inc.distance} km] (#${inc.messageId})`;
+      } else if (inc.count && inc.count > 0) {
+        itemText = `${inc.description}: R$ ${inc.amount.toFixed(2)} [${inc.count} registros] (#${inc.messageId})`;
       } else {
         itemText = `${inc.description}: R$ ${inc.amount.toFixed(2)} (#${inc.messageId})`;
       }
@@ -74,6 +74,7 @@ export async function getIncomeDetails(userId, month, monthName, source, activeP
 
   return message.trim();
 }
+
 
 export async function getExpenseDetails(userId, month, monthName, category = null, activeProfile) {
     const [year, monthNumber] = month.split("-");
@@ -90,7 +91,6 @@ export async function getExpenseDetails(userId, month, monthName, category = nul
     matchStage.category = category;
   }
 
-  // Busca os documentos completos de despesa
   const expenses = await Expense.find(matchStage).sort({
     category: 1,
     date: 1,
@@ -107,21 +107,17 @@ export async function getExpenseDetails(userId, month, monthName, category = nul
     
   const expensesByCategory = {};
   
-  // Agrupa os OBJETOS de despesa por categoria, não o texto formatado.
   expenses.forEach((expense) => {
     const groupKey = expense.category || "Outros";
     if (!expensesByCategory[groupKey]) {
       expensesByCategory[groupKey] = [];
     }
-    // AQUI ESTAVA O PROBLEMA: Agora estamos adicionando o objeto completo.
     expensesByCategory[groupKey].push(expense);
   });
 
-  // Itera sobre as categorias e os objetos de despesa para formatar a saída.
   for (const groupKey in expensesByCategory) {
     message += `📁 *${groupKey}*:\n`;
     expensesByCategory[groupKey].forEach(expenseItem => {
-      // Agora 'expenseItem' é o objeto de despesa, com '.amount', '.description', etc.
       const itemText = `${expenseItem.description}: R$ ${expenseItem.amount.toFixed(2)} (#${expenseItem.messageId})`;
       message += `  💸 \`\`\`${itemText}\`\`\`\n`;
     });
@@ -140,30 +136,21 @@ export async function getIncomesBySource(userId, month, source, activeProfile) {
     userId,
     profileType: activeProfile,
     date: { $gte: startDate, $lte: endDate },
-    category: "Corrida", // Focamos apenas em corridas para essa análise
+    count: { $gt: 0 } 
   };
-
-  if (source) {
-    matchConditions.source = source;
-  }
-
-  // Categoria de ganho agora é dinâmica
-  const incomeCategory = activeProfile === 'motoboy' ? 'Entrega' : 'Corrida';
-  matchConditions.category = incomeCategory;
+  if (source) { matchConditions.source = source; }
 
   const incomes = await Income.aggregate([
     { $match: matchConditions },
     {
       $group: {
-        _id: "$source", // Agrupa por plataforma (Uber, 99, etc)
-        total: { $sum: "$amount" }, // Soma o valor das corridas (já existia)
-        count: { $sum: 1 }, // NOVO: Conta o número de corridas
-        totalDistance: { $sum: "$distance" }, // NOVO: Soma a quilometragem
+        _id: "$source",
+        total: { $sum: "$amount" },
+        count: { $sum: "$count" }, 
       },
     },
-    { $sort: { total: -1 } }, // Ordena da mais rentável para a menos
+    { $sort: { total: -1 } },
   ]);
-
   return incomes;
 }
 
@@ -180,13 +167,10 @@ export async function getExpensesByCategory(userId, month, category = null, acti
     },
   };
 
-  // Se uma categoria específica for fornecida, adicionamos ao filtro.
   if (category) {
     matchStage.category = category;
   }
 
-  // Se a consulta for para uma categoria específica, agrupamos por descrição para ver os itens.
-  // Se for geral, agrupamos por categoria para ver os totais de cada uma.
   const groupStage = {
     _id: category ? "$description" : "$category",
     total: { $sum: "$amount" },
@@ -203,11 +187,11 @@ export async function getProfitReportData(userId, days, activeProfile) {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
   startDate.setHours(0, 0, 0, 0);
-
+  
   const matchStage = { userId, profileType: activeProfile, date: { $gte: startDate } };
 
   const incomePromise = Income.aggregate([
-    { $match: { userId, date: { $gte: startDate } } },
+    { $match: matchStage }, 
     {
       $group: {
         _id: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
@@ -217,7 +201,7 @@ export async function getProfitReportData(userId, days, activeProfile) {
   ]);
 
   const expensePromise = Expense.aggregate([
-    { $match: { userId, date: { $gte: startDate } } },
+    { $match: matchStage },
     {
       $group: {
         _id: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
@@ -292,7 +276,14 @@ export async function getPeriodReport(userId, { period, month, monthName, active
 
   const incomePromise = Income.aggregate([
     { $match: matchStage },
-    { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 }, totalDistance: { $sum: "$distance" } } }
+    { $group: {
+        _id: null,
+        total: { $sum: "$amount" },
+        count: { $sum: 1 },
+        racesCount: { $sum: { $ifNull: ["$count", 0] } },
+        turnIncomeCount: { $sum: { $cond: [{ $gt: ["$count", 0] }, 1, 0] } },
+      }
+    }
   ]);
 
   const expensePromise = Expense.aggregate([
@@ -302,99 +293,17 @@ export async function getPeriodReport(userId, { period, month, monthName, active
 
   const [incomeResult, expenseResult] = await Promise.all([incomePromise, expensePromise]);
   
-  const incomeData = incomeResult[0] || { total: 0, count: 0, totalDistance: 0 };
+  const incomeData = incomeResult[0] || { total: 0, count: 0, racesCount: 0, turnIncomeCount: 0 };
   const expenseData = expenseResult[0] || { total: 0, count: 0 };
 
   return {
     title: title,
     totalIncome: incomeData.total,
     incomeCount: incomeData.count,
-    totalDistance: incomeData.totalDistance,
+    racesCount: incomeData.racesCount,
+    turnIncomeCount: incomeData.turnIncomeCount,
     totalExpenses: expenseData.total,
     expenseCount: expenseData.count,
     profit: incomeData.total - expenseData.total,
   };
 }
-
-//funções antigas
-export async function calculateTotalIncome(
-  userId,
-  month = null,
-  source = null
-) {
-  let matchStage = { userId };
-  if (source) {
-    matchStage.source = { $regex: new RegExp(`^${source.trim()}$`, "i") };
-  }
-  if (month) {
-    const [year, monthNumber] = month.split("-");
-    matchStage.date = {
-      $gte: new Date(Date.UTC(parseInt(year), parseInt(monthNumber) - 1, 1)),
-      $lte: new Date(
-        Date.UTC(parseInt(year), parseInt(monthNumber), 0, 23, 59, 59)
-      ),
-    };
-  }
-  const result = await Income.aggregate([
-    { $match: matchStage },
-    { $group: { _id: null, total: { $sum: "$amount" } } },
-  ]);
-  return result.length > 0 ? result[0].total : 0;
-}
-export async function calculateTotalExpenses(
-  userId,
-  category = null,
-  month = null
-) {
-  let matchStage = { userId };
-  if (category) {
-    matchStage.category = category;
-  }
-  if (month) {
-    const [year, monthNumber] = month.split("-");
-    matchStage.date = {
-      $gte: new Date(Date.UTC(parseInt(year), parseInt(monthNumber) - 1, 1)),
-      $lte: new Date(
-        Date.UTC(parseInt(year), parseInt(monthNumber), 0, 23, 59, 59)
-      ),
-    };
-  }
-  const result = await Expense.aggregate([
-    { $match: matchStage },
-    { $group: { _id: null, total: { $sum: "$amount" } } },
-  ]);
-  return result.length > 0 ? result[0].total : 0;
-}
-export async function getPeriodSummary(
-  userId,
-  month,
-  monthName,
-  source,
-  category
-) {
-  if (source) {
-    const total = await calculateTotalIncome(userId, month, source);
-    return `💰 Ganhos com *${source}* em _${monthName}_: *R$ ${total.toFixed(
-      2
-    )}*`;
-  }
-  if (category) {
-    const total = await calculateTotalExpenses(userId, category, month);
-    return `💸 Gastos com *${category}* em _${monthName}_: *R$ ${total.toFixed(
-      2
-    )}*`;
-  }
-  const totalIncome = await calculateTotalIncome(userId, month);
-  const totalExpenses = await calculateTotalExpenses(userId, null, month);
-  const profit = totalIncome - totalExpenses;
-  const profitEmoji = profit >= 0 ? "✅" : "❌";
-
-  let message = `*Resumo de ${monthName}*:\n\n`;
-  message += `💰 Ganhos: R$ ${totalIncome.toFixed(2)}\n`;
-  message += `💸 Gastos: R$ ${totalExpenses.toFixed(2)}\n`;
-  message += `----------\n`;
-  message += `${profitEmoji} *Lucro: R$ ${profit.toFixed(2)}*`;
-
-  return message;
-}
-//funções antigas

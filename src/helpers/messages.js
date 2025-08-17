@@ -14,83 +14,69 @@ export function sendHelpMessage(twiml, userStats) {
   const activeProfile = userStats.activeProfile || 'driver';
   const config = PROFILE_CONFIG[activeProfile];
 
-  let message = `👋 Olá! Sou o *ADAP*, seu Copiloto Financeiro para *${config.name}s*.
+  let message = `👋 Olá! Sou o *ADAP*, seu Copiloto Financeiro. Comandos para seu perfil de ${config.name} ${config.emoji}:
 
-Aqui estão alguns exemplos para o seu perfil ${config.emoji}:
+*🏁 GERENCIAR TURNO (NOVO!):*
+› \`iniciar turno [km inicial]\`
+› \`encerrar turno [km final]\`
 
-*Para começar:*
-› "cadastrar ${config.pronomePossessivo} ${config.vehicleName}"
-› "ver dados d${config.artigoDefinido} ${config.vehicleName}"
+*💸 LANÇAMENTOS:*
+› \`${config.expenseExample}\`
+› \`ganhei 50 numa corrida particular de 15km\`
+› \`vendi um produto por 20 reais\`
 
-*Lançamentos:*
-› "${config.expenseExample}"
-› "${config.incomeExample}"
+*🗓️ LEMBRETES & METAS:*
+› \`meta de hoje 300\` _(durante o turno)_
+› \`lembrete turno 8h\` _(lembrete diário)_
+› \`lembrete pagar ${config.vehicleName} amanhã 10h\`
+› \`me lembre de fazer manutenção em 3 dias\`
 
-*Relatórios:*
-› "resumo da semana"
-› "meus gastos"
-› "meus ganhos"
-› "gráfico das plataformas"
+*📊 RELATÓRIOS:*
+› \`resumo da semana\`
+› \`meus gastos\`
+› \`gráfico das plataformas\`
 
-*Lembretes:*
-› "me lembre de pagar o seguro d${config.artigoDefinido} ${config.vehicleName}"`;
+*OUTROS:*
+› \`mudar para [motorista/motoboy/zev]\`
+› \`meu ${config.vehicleName}\`
 
-  // =================== INSTRUÇÃO EXCLUSIVA DA Z-EV ===================
-  // Adiciona a seção de turnos apenas se o perfil for zev_driver
-  if (activeProfile === 'zev_driver') {
-    message += `
+Para apagar, use o ID do registro. Ex: \`apagar #a4b8c\``;
 
-*Gerenciar Turnos:*
-› "iniciar turno 10500 km"
-› "encerrar turno 10650 km"`;
-  }
-  // =====================================================================
-
-  message += `
-
-*Alternar entre perfis:*
-› "mudar para motorista", "mudar para motoboy", "mudar para motorista Z-EV"
-
-Para apagar um registro, use o ID fornecido. Ex: "apagar #a4b8c".`;
-  
   sendOrLogMessage(twiml, message);
 }
 
-
 export function sendIncomeAddedMessage(twiml, incomeData) {
-  const { amount, description, source, distance, tax, messageId, category } = incomeData;
+  const { amount, description, source, distance, messageId, count } = incomeData;
 
   let message = `💰 *Ganho de R$ ${amount.toFixed(2)} anotado!*`;
-
   message += `\n📃 *Descrição:* ${description.charAt(0).toUpperCase() + description.slice(1)}`;
-  
   if (source && source !== 'Outros') {
     message += `\n📱 *Plataforma:* ${source}`;
   }
 
-  if (category === 'Corrida') {
+  if (distance && distance > 0) {
     message += `\n🛣️ *Distância:* ${distance} km`;
-
-    if (tax) {
-      message += `\n💸 *Taxa App:* R$ ${tax.toFixed(2)}`;
-    }
   }
-
+  
+  if (count && count > 0) {
+      message += `\n*Corridas/Entregas:* ${count}`;
+  }
   message += `\n\n🆔 para exclusão: _#${messageId}_`;
 
-  sendOrLogMessage(twiml,message);
+  sendOrLogMessage(twiml, message);
 }
 
 export function sendExpenseAddedMessage(twiml, expenseData) {
-  sendOrLogMessage(twiml,
-    `💸 *Gasto anotado!*
-📌 ${
-      expenseData.description.charAt(0).toUpperCase() +
-      expenseData.description.slice(1)
-    } (_${expenseData.category}_)
-❌ *R$ ${expenseData.amount.toFixed(2)}*
-🆔 #${expenseData.messageId}`
-  );
+  const { amount, description, category, messageId, kwh } = expenseData;
+  let message = `💸 *Gasto anotado!*
+📌 ${description.charAt(0).toUpperCase() + description.slice(1)} (_${category}_)
+❌ *R$ ${amount.toFixed(2)}*`;
+
+  if (kwh && kwh > 0) {
+    message += `\n⚡️ *Recarga:* ${kwh} kWh`;
+  }
+  message += `\n🆔 #${messageId}`;
+  sendOrLogMessage(twiml, message);
 }
 
 export function sendIncomeDeletedMessage(twiml, incomeData) {
@@ -150,23 +136,19 @@ export function sendPeriodReportMessage(twiml, reportData, activeProfile) {
     return;
   }
   
+  const config = PROFILE_CONFIG[activeProfile];
   const title = reportData.title;
-  const rPerKm = reportData.totalDistance > 0 ? (reportData.totalIncome / reportData.totalDistance).toFixed(2) : '0.00';
   const profitEmoji = reportData.profit >= 0 ? "✅" : "❌";
+  const incomeLabel = (activeProfile === 'motoboy') ? 'Entregas/Corridas' : 'Corridas';
 
-  const incomeLabel = activeProfile === 'motoboy' ? 'Entregas' : 'Corridas';
-  const incomeMetricLabel = activeProfile === 'motoboy' ? 'R$/entrega' : 'R$/km Médio';
-  
-  const incomeMetricValue = activeProfile === 'motoboy'
-    ? (reportData.incomeCount > 0 ? (reportData.totalIncome / reportData.incomeCount).toFixed(2) : '0.00')
-    : rPerKm;
-
-  let message = `📊 *Resumo ${title}*\n\n`;
+  let message = `📊 *Resumo ${title}* (${config.name})\n\n`;
 
   message += `*Ganhos* 💰\n`;
   message += `› *Total:* R$ ${reportData.totalIncome.toFixed(2)}\n`;
-  message += `› *${incomeLabel}:* ${reportData.incomeCount}\n`;
-  message += `› *${incomeMetricLabel}:* R$ ${incomeMetricValue}\n\n`;
+  if (reportData.racesCount > 0) {
+    message += `› *${incomeLabel}:* ${reportData.racesCount}\n`;
+  }
+  message += `› *Registros Avulsos:* ${reportData.incomeCount - reportData.turnIncomeCount}\n\n`;
 
   message += `*Gastos* 💸\n`;
   message += `› *Total:* R$ ${reportData.totalExpenses.toFixed(2)}\n`;

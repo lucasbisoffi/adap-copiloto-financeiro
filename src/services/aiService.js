@@ -57,7 +57,6 @@ export async function interpretDriverMessage(message, currentDate) {
   nextMonthDate.setMonth(now.getMonth() + 1);
   const nextMonthYear = nextMonthDate.getFullYear();
   const nextMonthNumber = String(nextMonthDate.getMonth() + 1).padStart(2, '0');
-  // A data exata para o exemplo será dia 15 do próximo mês, às 09:00 UTC.
   const nextMonthExampleISO = `${nextMonthYear}-${nextMonthNumber}-15T09:00:00.000Z`;
 
   const systemPrompt = `
@@ -74,6 +73,11 @@ export async function interpretDriverMessage(message, currentDate) {
   1. IDENTIFIQUE A INTENÇÃO:
      - "add_income": O usuário quer registrar um ganho.
      - "add_expense": O usuário quer registrar um gasto.
+     - "start_turn": Iniciar um turno de trabalho.
+     - "end_turn": Encerrar um turno.
+     - "submit_turn_income": Informar os ganhos detalhados do turno.
+     - "set_turn_goal": Definir uma meta de ganhos para o turno.
+     - "set_turn_reminder": Definir lembrete diário para iniciar o turno.
      - "switch_profile": O usuário quer trocar seu perfil ativo (driver/motoboy).
      - "add_profile": O usuário quer adicionar um novo perfil de trabalho.
      - "delete_transaction": O usuário quer apagar um registro anterior. Extraia o messageId.
@@ -91,32 +95,24 @@ export async function interpretDriverMessage(message, currentDate) {
      - "unknown": A intenção não se encaixa em nenhuma das anteriores.
 
   2. REGRAS PARA EXTRAÇÃO DE DADOS EM:
-  
+    
     2a. "add_expense":
-      - amount: O valor numérico do gasto.
-      - description: A descrição do gasto.
-      - category: CLASSIFIQUE OBRIGATORIAMENTE em uma das seguintes categorias. Use o bom senso com base na descrição.
-        - 'Combustível': "gasolina", "álcool", "etanol", "gnv", "encher o tanque".
-        - 'Manutenção': "troca de óleo", "pneu", "freio", "revisão", "mecânico".
-        - 'Limpeza': "lavagem", "higienização", "lava-rápido".
-        - 'Alimentação/Água': "almoço", "janta", "café", "lanche", "água para passageiro".
-        - 'Pedágio': "pedágio", "sem parar".
-        - 'Aluguel do Veículo': "aluguel do carro", "semanal do carro".
-        - 'Parcela do Financiamento': "parcela do carro", "financiamento".
-        - 'Seguro': "seguro do carro", "proteção veicular".
-        - 'Impostos/Taxas Anuais': "ipva", "licenciamento".
-        - 'Plano de Celular': "crédito", "plano de dados", "internet".
-        - 'Outros': Se nenhuma outra categoria se encaixar perfeitamente.
+      - Extraia 'amount' e 'description'.
+      - CLASSIFIQUE a 'category' em uma das seguintes: ['Combustível', 'Manutenção', 'Limpeza', 'Alimentação/Água', 'Pedágio', 'Aluguel do Veículo', 'Parcela do Financiamento', 'Seguro', 'IPVA e Licenciamento', 'Plano de Celular', 'Multas', 'Estacionamento', 'Moradia', 'Contas (Luz, Água)', 'Saúde', 'Lazer', 'Outros'].
+    
+    2b. "add_income" :
+      - Extraia 'amount', 'description', 'source'.
+      - CATEGORIA: Classifique em ['Corrida', 'Gorjeta', 'Bônus', 'Venda de Produto', 'Serviço Extra', 'Outros'].
+      - Se a categoria for 'Corrida', extraia OBRIGATORIAMENTE 'distance' (km).
 
-    2b. "add_income":
-      - amount: O valor LÍQUIDO que o motorista recebeu. Este é o valor principal a ser extraído.
-      - description: A descrição do ganho.
-      - category: CLASSIFIQUE OBRIGATORIAMENTE em uma das seguintes: ['Corrida', 'Gorjeta', 'Bônus'].
-      - source: IDENTIFIQUE A PLATAFORMA da corrida. Deve ser uma das seguintes: ['Uber', '99', 'InDrive', 'UBRA', 'Garupa', 'Rota 77', 'Guri', 'Mais Próximo', 'Particular', 'Outros']. Se não for especificado, use 'Outros'.
-      - distance: (Obrigatório) A quilometragem (KM) da corrida. Você DEVE extrair este valor.
-      - (Opcional) tax: A taxa do aplicativo, APENAS SE o motorista mencionar explicitamente. Este valor é informativo e não deve ser subtraído do 'amount'.
-      
-    2c. EXTRAIA DADOS PARA "add_reminder":
+    2c. "submit_turn_income":
+      - O usuário informará ganhos e contagem de corridas. Ex: "uber 55 2 corridas".
+      - Extraia em um array 'incomes' contendo objetos com 'source', 'amount' e 'count'.
+
+    2d. "start_turn" & "end_turn":
+      - Extraia 'mileage' (km).
+
+    2e. EXTRAIA DADOS PARA "add_reminder":
       - extraia 'description', 'date' e 'type'.
       - O 'type' DEVE ser uma das categorias de gasto ou ganho que você já conhece (ex: 'Pagamento', 'Manutenção', 'Limpeza', 'Combustível', etc.). Se não se encaixar, use 'Outros'.
       - Se a data for **absoluta** (ex: "amanhã às 15h", "dia 20"), extraia 'date' no formato YYYY-MM-DDTHH:mm:ss.
@@ -146,19 +142,28 @@ export async function interpretDriverMessage(message, currentDate) {
      }
 
   EXEMPLOS:
+  - User: "iniciar turno 85000"
+    Response: { "intent": "start_turn", "data": { "mileage": 85000 } }
+  - User: "encerrar turno 85200"
+    Response: { "intent": "end_turn", "data": { "mileage": 85200 } }
+  - User: "meta de hoje 300"
+    Response: { "intent": "set_turn_goal", "data": { "amount": 300 } }
+  - User: "lembrete turno 8h"
+    Response: { "intent": "set_turn_reminder", "data": { "time": "08:00" } }
+  - User: "uber 150 5 corridas, 99pop 100 3 corridas"
+    Response: { "intent": "submit_turn_income", "data": { "incomes": [{ "source": "Uber", "amount": 150, "count": 5 }, { "source": "99pop", "amount": 100, "count": 3 }] } }
+
   - User: "150 de gasolina"
     Response: { "intent": "add_expense", "data": { "amount": 150, "description": "gasolina", "category": "Combustível" } }
   - User: "45 na troca de oleo"
     Response: { "intent": "add_expense", "data": { "amount": 45, "description": "troca de oleo", "category": "Manutenção" } }
   - User: "paguei 350 no aluguel do carro"
-    Response: { "intent": "add_expense", "data": { "amount": 350, "description": "aluguel do carro", "category": "Aluguel do Veículo" } }  
-
-  - User: "ganhei 55 numa corrida da uber de 20km"
-    Response: { "intent": "add_income", "data": { "amount": 55, "description": "corrida", "category": "Corrida", "source": "Uber", "distance": 20 } }
-  - User: "corrida de 35 na 99, foram 10km com taxa de 12"
-    Response: { "intent": "add_income", "data": { "amount": 35, "description": "corrida de 10km", "category": "Corrida", "source": "99", "tax": 12, "distance": 10 } }
-  - User: "99 pagou 30 reais por 8km"
-    Response: { "intent": "add_income", "data": { "amount": 30, "description": "pagamento", "category": "Corrida", "source": "99", "distance": 8 } }
+    Response: { "intent": "add_expense", "data": { "amount": 350, "description": "aluguel do carro", "category": "Aluguel do Veículo" } }
+  
+  - User: "ganhei 40 numa corrida particular de 15km"
+    Response: { "intent": "add_income", "data": { "amount": 40, "description": "corrida particular", "category": "Corrida", "source": "Particular", "distance": 15 } }
+  - User: "vendi um brigadeiro por 5 reais"
+    Response: { "intent": "add_income", "data": { "amount": 5, "description": "venda de brigadeiro", "category": "Venda de Produto", "source": "Outros" } }
 
   - User: "resumo de hoje"
     Response: { "intent": "get_period_report", "data": { "period": "today" } }
@@ -192,9 +197,9 @@ export async function interpretDriverMessage(message, currentDate) {
   - User: "ver detalhes"
     Response: { "intent": "get_transaction_details", "data": {} }
 
-  - User: "gráfico de ganhos" // <-- NOVO EXEMPLO
+  - User: "gráfico de ganhos"
     Response: { "intent": "generate_platform_chart", "data": {} }
-  - User: "pizza das plataformas" // <-- NOVO EXEMPLO (usando um jargão comum)
+  - User: "pizza das plataformas"
     Response: { "intent": "generate_platform_chart", "data": {} }
 
   - User: "me lembre hoje daqui 5 minutos de realizar ajustes no copiloto"
@@ -280,7 +285,6 @@ export async function interpretMotoboyMessage(message, currentDate) {
   nextMonthDate.setMonth(now.getMonth() + 1);
   const nextMonthYear = nextMonthDate.getFullYear();
   const nextMonthNumber = String(nextMonthDate.getMonth() + 1).padStart(2, '0');
-  // A data exata para o exemplo será dia 15 do próximo mês, às 09:00 UTC.
   const nextMonthExampleISO = `${nextMonthYear}-${nextMonthNumber}-15T09:00:00.000Z`;
 
   const systemPrompt = `
@@ -291,6 +295,11 @@ export async function interpretMotoboyMessage(message, currentDate) {
   1. IDENTIFIQUE A INTENÇÃO:
      - "add_income": O usuário quer registrar um ganho.
      - "add_expense": O usuário quer registrar um gasto.
+     - "start_turn": Iniciar um turno de trabalho.
+     - "end_turn": Encerrar um turno.
+     - "submit_turn_income": Informar os ganhos detalhados do turno.
+     - "set_turn_goal": Definir uma meta de ganhos para o turno.
+     - "set_turn_reminder": Definir lembrete diário para iniciar o turno.
      - "switch_profile": O usuário quer trocar seu perfil ativo (driver/motoboy).
      - "add_profile": O usuário quer adicionar um novo perfil de trabalho.
      - "delete_transaction": O usuário quer apagar um registro anterior. Extraia o messageId.
@@ -311,27 +320,22 @@ export async function interpretMotoboyMessage(message, currentDate) {
   2. REGRAS PARA EXTRAÇÃO DE DADOS EM:
   
     2a. "add_expense":
-      - amount: O valor numérico do gasto.
-      - description: A descrição do gasto.
-      - category: CLASSIFIQUE OBRIGATORIAMENTE em uma das seguintes categorias de MOTO:
-        - 'Manutenção da Moto': "relação", "troca de óleo da moto", "pneu da moto", "freio".
-        - 'Combustível': "gasolina", "etanol", "abastecer".
-        - 'Acessórios': "baú", "capa de chuva", "suporte de celular".
-        - 'Aluguel da Moto': "aluguel da moto", "semanal da moto".
-        - 'Documentação': "licenciamento da moto", "IPVA da moto".
-        - 'Plano de Celular': "crédito", "plano de dados".
-        - 'Alimentação': "almoço", "janta", "lanche".
-        - 'Limpeza': "lavagem", "higienização", "lava-rápido".
-        - 'Outros': Se nenhuma outra categoria se encaixar.
+      - Extraia 'amount', 'description'.
+      - CLASSIFIQUE 'category' em uma das: ['Manutenção da Moto', 'Combustível', 'Acessórios', 'Aluguel da Moto', 'Documentação da Moto', 'Plano de Celular', 'Alimentação', 'Limpeza', 'Moradia', 'Contas (Luz, Água)', 'Saúde', 'Lazer', 'Outros'].
 
     2b. "add_income":
-      - amount: O valor LÍQUIDO que o entregador recebeu.
-      - description: A descrição do ganho.
-      - category: CLASSIFIQUE OBRIGATORIAMENTE em uma das seguintes: ['Entrega', 'Gorjeta', 'Bônus'].
-      - source: IDENTIFIQUE A PLATAFORMA. Deve ser uma das seguintes: ['iFood', 'Rappi', 'Loggi', 'Lalamove', 'James', 'Entrega Particular', 'Outros'].
-      - distance: (Opcional) A quilometragem (KM) da entrega. Extraia se mencionado.
+      - Extraia 'amount', 'description', 'source'.
+      - CATEGORIA: Classifique em ['Entrega', 'Corrida', 'Gorjeta', 'Bônus', 'Venda de Produto', 'Serviço Extra', 'Outros'].
+      - Se a categoria for 'Corrida' ou 'Entrega', extraia 'distance' (km), se mencionado.
+
+    2c. "submit_turn_income":
+      - Extraia em um array 'incomes' com 'source', 'amount' e 'count'.
+      - Para cada item, extraia também 'incomeType' que deve ser 'Entrega' ou 'Corrida'. Se não for claro, assuma 'Entrega'.
+
+    2d. "start_turn" & "end_turn":
+      - Extraia 'mileage' (km).
       
-    2c. EXTRAIA DADOS PARA "add_reminder":
+    2e. EXTRAIA DADOS PARA "add_reminder":
       - extraia 'description', 'date' e 'type'.
       - O 'type' DEVE ser uma das categorias de gasto ou ganho que você já conhece (ex: 'Aluguel da Moto', 'Manutenção da Moto', 'Limpeza', 'Combustível', 'Entrega', etc.). Se não se encaixar, use 'Outros'.
       - Se a data for **absoluta** (ex: "amanhã às 15h", "dia 20"), extraia 'date' no formato YYYY-MM-DDTHH:mm:ss.
@@ -361,16 +365,22 @@ export async function interpretMotoboyMessage(message, currentDate) {
      }
 
   EXEMPLOS:
+  - User: "ifood 120 8 entregas, 99pop 60 3 corridas"
+    Response: { "intent": "submit_turn_income", "data": { "incomes": [{ "source": "iFood", "amount": 120, "count": 8, "incomeType": "Entrega" }, { "source": "99pop", "amount": 60, "count": 3, "incomeType": "Corrida" }] } }
+  - User: "rappi 80 reais em 5"
+    Response: { "intent": "submit_turn_income", "data": { "incomes": [{ "source": "Rappi", "amount": 80, "count": 5, "incomeType": "Entrega" }] } }
+  - User: "fiz duas corridas na 99, deu 45 reais"
+    Response: { "intent": "submit_turn_income", "data": { "incomes": [{ "source": "99pop", "amount": 45, "count": 2, "incomeType": "Corrida" }] } }
+  
   - User: "gastei 120 na relação"
     Response: { "intent": "add_expense", "data": { "amount": 120, "description": "relação", "category": "Manutenção da Moto" } }
-  - User: "25 reais numa entrega do Rappi de 5km"
-    Response: { "intent": "add_income", "data": { "amount": 25, "description": "entrega", "source": "Rappi", "category": "Entrega", "distance": 5 } }
   - User: "50 de gasolina"
     Response: { "intent": "add_expense", "data": { "amount": 50, "description": "gasolina", "category": "Combustível" } }
-  - User: "mudar para carro"
-    Response: { "intent": "switch_profile", "data": { "profile": "driver" } }
-  - User: "quero adicionar perfil de motorista"
-    Response: { "intent": "add_profile", "data": { "profile": "driver" } }
+
+  - User: "fiz uma entrega particular de 10km por 25"
+    Response: { "intent": "add_income", "data": { "amount": 25, "description": "entrega particular", "category": "Entrega", "source": "Particular", "distance": 10 } }
+  - User: "vendi uma maquininha por 100"
+    Response: { "intent": "add_income", "data": { "amount": 100, "description": "venda de maquininha", "category": "Venda de Produto", "source": "Outros" } }
 
   - User: "resumo da semana"
     Response: { "intent": "get_period_report", "data": { "period": "week" } }
@@ -476,7 +486,6 @@ export async function interpretZEVMessage(message, currentDate) {
   nextMonthDate.setMonth(now.getMonth() + 1);
   const nextMonthYear = nextMonthDate.getFullYear();
   const nextMonthNumber = String(nextMonthDate.getMonth() + 1).padStart(2, '0');
-  // A data exata para o exemplo será dia 15 do próximo mês, às 09:00 UTC.
   const nextMonthExampleISO = `${nextMonthYear}-${nextMonthNumber}-15T09:00:00.000Z`;
 
   const systemPrompt = `
@@ -493,6 +502,11 @@ export async function interpretZEVMessage(message, currentDate) {
   1. IDENTIFIQUE A INTENÇÃO:
      - "add_income": O usuário quer registrar um ganho.
      - "add_expense": O usuário quer registrar um gasto.
+     - "start_turn": Iniciar um turno.
+     - "end_turn": Encerrar um turno.
+     - "submit_turn_income": Informar ganhos do turno.
+     - "set_turn_goal": Definir meta para o turno.
+     - "set_turn_reminder": Definir lembrete de turno diário.
      - "switch_profile": O usuário quer trocar seu perfil ativo (driver/motoboy).
      - "add_profile": O usuário quer adicionar um novo perfil de trabalho.
      - "delete_transaction": O usuário quer apagar um registro anterior. Extraia o messageId.
@@ -512,30 +526,23 @@ export async function interpretZEVMessage(message, currentDate) {
      - "end_turn": O usuário quer encerrar seu turno.
 
   2. REGRAS PARA EXTRAÇÃO DE DADOS EM:
-    2a. "start_turn" e "end_turn":
-      - Extraia OBRIGATORIAMENTE o valor numérico da quilometragem (KM) para o campo "mileage".
-  
-    2b. "add_expense":
-      - amount: O valor numérico do gasto.
-      - description: A descrição do gasto.
-      - CLASSIFIQUE a categoria em uma das seguintes, específicas para carros elétricos:
-        - 'Recarga Elétrica': "recarga", "carregamento", "eletroposto".
-        - 'Manutenção (Pneus/Freios)': "pneu", "freio", "revisão periódica".
-        - 'Limpeza': "lavagem", "higienização".
-        - 'Alimentação/Água': "almoço", "janta", "café", "lanche".
-        - 'Seguro': "seguro do carro", "proteção veicular".
-        - 'Parcela do Aluguel/Financiamento': "parcela do carro", "aluguel do carro".
-        - 'Software/Assinaturas': "pacote de dados do carro", "assinatura premium".
-        - 'Outros': Se nenhuma outra categoria se encaixar.
+    2a. "add_expense":
+      - Extraia 'amount', 'description'.
+      - CLASSIFIQUE 'category' em uma das: ['Recarga Elétrica', 'Manutenção (Pneus/Freios)', 'Limpeza', 'Alimentação/Água', 'Seguro', 'Parcela do Aluguel/Financiamento', 'Software/Assinaturas', 'Moradia', 'Contas (Luz, Água)', 'Saúde', 'Lazer', 'Outros'].
+      - Se a categoria for 'Recarga Elétrica', extraia também 'kwh'.
 
-    2c. "add_income":
-      - Extraia "amount", "description" e "distance" (KM).
-      - amount: O valor LÍQUIDO que o motorista recebeu. Este é o valor principal a ser extraído.
-      - description: A descrição do ganho.
-      - category: CLASSIFIQUE em ['Corrida', 'Gorjeta', 'Bônus'].
-      - source: IDENTIFIQUE a plataforma: ['Z-EV', 'Uber', '99', 'Particular', 'Outros'].
+    2b. "add_income":
+      - Extraia 'amount', 'description', 'source'.
+      - CATEGORIA: Classifique em ['Corrida', 'Gorjeta', 'Bônus', 'Venda de Produto', 'Serviço Extra', 'Outros'].
+      - Se a categoria for 'Corrida', extraia OBRIGATORIAMENTE 'distance' (km).
+
+    2c. "submit_turn_income":
+      - Extraia em um array 'incomes' com 'source', 'amount', 'count'.
+
+    2d. "start_turn" & "end_turn":
+      - Extraia 'mileage' (km).
       
-    2d. EXTRAIA DADOS PARA "add_reminder":
+    2e. EXTRAIA DADOS PARA "add_reminder":
       - extraia 'description', 'date' e 'type'.
       - O 'type' DEVE ser uma das categorias de gasto ou ganho que você já conhece (ex: 'Pagamento', 'Manutenção', 'Limpeza', 'Recarga Elétrica', etc.). Se não se encaixar, use 'Outros'.
       - Se a data for **absoluta** (ex: "amanhã às 15h", "dia 20"), extraia 'date' no formato YYYY-MM-DDTHH:mm:ss.
@@ -578,14 +585,14 @@ export async function interpretZEVMessage(message, currentDate) {
   - User: "gastei 40 na recarga"
     Response: { "intent": "add_expense", "data": { "amount": 40, "description": "recarga", "category": "Recarga Elétrica" } }
 
-  - User: "ganhei 65 numa corrida da z-ev de 22km"
-    Response: { "intent": "add_income", "data": { "amount": 65, "description": "corrida", "category": "Corrida", "source": "Z-EV", "distance": 22 } }
-  - User: "ganhei 55 numa corrida da uber de 20km"
-    Response: { "intent": "add_income", "data": { "amount": 55, "description": "corrida", "category": "Corrida", "source": "Uber", "distance": 20 } }
-  - User: "corrida de 35 na 99, foram 10km com taxa de 12"
-    Response: { "intent": "add_income", "data": { "amount": 35, "description": "corrida de 10km", "category": "Corrida", "source": "99", "tax": 12, "distance": 10 } }
-  - User: "99 pagou 30 reais por 8km"
-    Response: { "intent": "add_income", "data": { "amount": 30, "description": "pagamento", "category": "Corrida", "source": "99", "distance": 8 } }
+  - User: "ganhei 60 numa corrida particular de 20km"
+    Response: { "intent": "add_income", "data": { "amount": 60, "description": "corrida particular", "category": "Corrida", "source": "Particular", "distance": 20 } }
+  - User: "vendi um carregador por 50"
+    Response: { "intent": "add_income", "data": { "amount": 50, "description": "venda de carregador", "category": "Venda de Produto", "source": "Outros" } }
+  - User: "40 na recarga de 15kwh"
+    Response: { "intent": "add_expense", "data": { "amount": 40, "description": "recarga", "category": "Recarga Elétrica", "kwh": 15 } }
+  - User: "zev 300 10 corridas, uber 100 4"
+    Response: { "intent": "submit_turn_income", "data": { "incomes": [{ "source": "Z-EV", "amount": 300, "count": 10 }, { "source": "Uber", "amount": 100, "count": 4 }] } }
 
   - User: "resumo de hoje"
     Response: { "intent": "get_period_report", "data": { "period": "today" } }
